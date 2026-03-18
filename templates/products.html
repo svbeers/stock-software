@@ -1,0 +1,298 @@
+{% extends "layout.html" %}
+
+{% block title %}Producten | {{ ui_settings.business_name }}{% endblock %}
+
+{% block content %}
+  <section class="card">
+    <div class="toolbar">
+      <div class="section-title no-space">
+        <h1>Producten</h1>
+      </div>
+      <form method="get" class="search-form">
+        <input type="text" name="search" value="{{ selected_search }}" placeholder="Zoek producten">
+        <input type="hidden" name="sort" value="{{ selected_sort }}">
+        <input type="hidden" name="direction" value="{{ selected_direction }}">
+        <input type="hidden" name="category" value="{{ selected_category }}">
+        <button class="button secondary small" type="submit">Zoeken</button>
+      </form>
+      <div class="button-row">
+        <button class="button small" type="button" data-modal-open="#add-product-modal">Product toevoegen</button>
+        <button class="button secondary small" type="button" data-modal-open="#filter-product-modal">Filteren</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-title">
+      <h2>Productlijst</h2>
+    </div>
+    {% if products %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>{{ ui_settings.article_number_label }}</th>
+              <th>{{ ui_settings.description_label }}</th>
+              <th>{{ ui_settings.category_label }}</th>
+              <th>{{ ui_settings.stock_quantity_label }}</th>
+              <th>Kostprijs</th>
+              <th>Verkoopprijs</th>
+              <th class="compact-action-cell"> </th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for product in products %}
+              <tr>
+                <td>{{ product["article_number"] }}</td>
+                <td>{{ product["description"] }}</td>
+                <td>{{ product["category"] }}</td>
+                <td>{{ format_quantity(product["stock_quantity"]) }} {{ product["unit"] }}</td>
+                <td>EUR {{ "%.2f"|format(product["cost"]) }}</td>
+                <td>EUR {{ "%.2f"|format(calculate_sale_price(product["cost"], product["profit_margin"])) }}</td>
+                <td class="compact-action-cell">
+                  <button class="gear-button" type="button" data-modal-open="#product-edit-{{ product['id'] }}" aria-label="Product bewerken">
+                    <span aria-hidden="true">&#9881;</span>
+                  </button>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% for product in products %}
+        <section id="product-edit-{{ product['id'] }}" class="modal-shell" aria-hidden="true">
+          <div class="modal-backdrop" data-modal-close></div>
+          <div class="modal-card">
+            <div class="toolbar modal-toolbar">
+              <div class="section-title no-space">
+                <h2>{{ product["description"] }} bewerken</h2>
+                <p class="muted">{{ product["article_number"] }} | {{ format_quantity(product["stock_quantity"]) }} {{ product["unit"] }} in voorraad</p>
+              </div>
+              <button class="button secondary small" type="button" data-modal-close>Sluiten</button>
+            </div>
+            <form method="post" action="{{ url_for('update_product', product_id=product['id']) }}" class="form-grid">
+              <label>
+                <span>{{ ui_settings.article_number_label }}</span>
+                <input type="text" name="article_number" value="{{ product['article_number'] }}" required>
+              </label>
+              <label>
+                <span>{{ ui_settings.description_label }}</span>
+                <input type="text" name="description" value="{{ product['description'] }}" required>
+              </label>
+              <label>
+                <span>{{ ui_settings.unit_label }}</span>
+                <input type="text" name="unit" value="{{ product['unit'] }}" required>
+              </label>
+              <label>
+                <span>{{ ui_settings.purchase_quantity_label }}</span>
+                <input type="number" name="purchase_quantity" step="0.01" min="0.01" value="{{ product['purchase_quantity'] }}" required>
+              </label>
+              <label>
+                <span>{{ ui_settings.purchase_price_label }}</span>
+                <input type="number" name="purchase_price" step="0.01" min="0" value="{{ product['purchase_price'] }}" required>
+              </label>
+              <label>
+                <span>{{ ui_settings.stock_quantity_label }}</span>
+                <input type="number" name="stock_quantity" step="0.01" min="0" value="{{ product['stock_quantity'] }}" required>
+              </label>
+              <label>
+                <span>{{ ui_settings.profit_margin_label }}</span>
+                <input type="number" name="profit_margin" step="0.01" min="0" value="{{ product['profit_margin'] }}" required>
+              </label>
+              <label class="checkbox-row">
+                <span>Opvolgen met kabelnummers</span>
+                <input type="checkbox" name="meter_tracking_enabled" {% if product['meter_tracking_enabled'] %}checked{% endif %}>
+              </label>
+              <label>
+                <span>{{ ui_settings.category_label }}</span>
+                <select name="category" required>
+                  {% for category in categories %}
+                    <option value="{{ category }}" {% if category == product['category'] %}selected{% endif %}>{{ category }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <div class="modal-footer">
+                <p class="muted">Kostprijs: EUR {{ "%.4f"|format(product["cost"]) }}/{{ product["unit"] }}</p>
+                <button class="button" type="submit">Opslaan</button>
+              </div>
+            </form>
+            <section class="modal-section">
+              <div class="section-title">
+                <h3>Voorraad toevoegen</h3>
+              </div>
+              <form method="post" action="{{ url_for('receive_stock', product_id=product['id']) }}" class="form-grid">
+                <input type="hidden" name="next_page" value="products">
+                <label>
+                  <span>Ontvangen verpakkingen</span>
+                  <input type="number" name="packages_received" step="0.01" min="0.01" required>
+                </label>
+                <label>
+                  <span>Nieuwe aankoopprijs</span>
+                  <input type="number" name="purchase_price" step="0.01" min="0" value="{{ product['purchase_price'] }}" required>
+                </label>
+                <label class="full-width">
+                  <span>Opmerking levering</span>
+                  <input type="text" name="purchase_notes" placeholder="Leverancier, factuur, opmerking">
+                </label>
+                <div class="modal-footer">
+                  <span class="muted">1 aankoopseenheid = {{ format_quantity(product["purchase_quantity"]) }} {{ product["unit"] }} | huidige aankoopprijs EUR {{ "%.2f"|format(product["purchase_price"]) }}</span>
+                  <button class="button secondary" type="submit">Voorraad toevoegen</button>
+                </div>
+              </form>
+            </section>
+            <section class="modal-section">
+              <div class="section-title">
+                <h3>Voorraad corrigeren</h3>
+              </div>
+              <form method="post" action="{{ url_for('adjust_stock', product_id=product['id']) }}" class="form-grid">
+                <input type="hidden" name="next_page" value="products">
+                <label class="full-width">
+                  <span>Correctie</span>
+                  <input type="number" name="adjustment_quantity" step="0.01" placeholder="Gebruik -2 of +5" required>
+                </label>
+                <div class="modal-footer">
+                  <span></span>
+                  <button class="button secondary" type="submit">Correctie toepassen</button>
+                </div>
+              </form>
+            </section>
+            <section class="modal-section danger-zone">
+              <div class="toolbar">
+                <div class="section-title no-space">
+                  <h3>Product verwijderen</h3>
+                </div>
+                <form method="post" action="{{ url_for('delete_product', product_id=product['id']) }}" class="inline-form">
+                  <button class="button danger" type="submit">Verwijderen</button>
+                </form>
+              </div>
+            </section>
+          </div>
+        </section>
+      {% endfor %}
+    {% else %}
+      <p class="muted">Nog geen producten gevonden.</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <div class="toolbar">
+      <div class="section-title no-space">
+        <h2>CSV-import</h2>
+      </div>
+      <a class="button secondary small" href="{{ url_for('static', filename='example_products.csv') }}">Voorbeeld CSV</a>
+    </div>
+    <form method="post" action="{{ url_for('import_products') }}" enctype="multipart/form-data" class="search-form">
+      <input type="file" name="csv_file" accept=".csv,text/csv" required>
+      <button class="button small" type="submit">CSV importeren</button>
+    </form>
+  </section>
+
+  <section id="add-product-modal" class="modal-shell" aria-hidden="true">
+    <div class="modal-backdrop" data-modal-close></div>
+    <div class="modal-card">
+      <div class="toolbar modal-toolbar">
+        <div class="section-title no-space">
+          <h2>Product toevoegen</h2>
+        </div>
+        <button class="button secondary small" type="button" data-modal-close>Sluiten</button>
+      </div>
+      <form method="post" action="{{ url_for('create_product') }}" class="form-grid">
+        <label>
+          <span>{{ ui_settings.article_number_label }}</span>
+          <input type="text" name="article_number" required>
+        </label>
+        <label>
+          <span>{{ ui_settings.description_label }}</span>
+          <input type="text" name="description" required>
+        </label>
+        <label>
+          <span>{{ ui_settings.unit_label }}</span>
+          <input type="text" name="unit" placeholder="stuk, m, rol" required>
+        </label>
+        <label>
+          <span>{{ ui_settings.purchase_quantity_label }}</span>
+          <input type="number" name="purchase_quantity" step="0.01" min="0.01" value="1" required>
+        </label>
+        <label>
+          <span>{{ ui_settings.purchase_price_label }}</span>
+          <input type="number" name="purchase_price" step="0.01" min="0" required>
+        </label>
+        <label>
+          <span>{{ ui_settings.stock_quantity_label }}</span>
+          <input type="number" name="stock_quantity" step="0.01" min="0" value="0" required>
+        </label>
+        <label>
+          <span>{{ ui_settings.profit_margin_label }}</span>
+          <input type="number" name="profit_margin" step="0.01" min="0" required>
+        </label>
+        <label class="checkbox-row">
+          <span>Opvolgen met kabelnummers</span>
+          <input type="checkbox" name="meter_tracking_enabled">
+        </label>
+        <label>
+          <span>{{ ui_settings.category_label }}</span>
+          <select name="category" required>
+            {% for category in categories %}
+              <option value="{{ category }}">{{ category }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <div class="modal-footer">
+          <span></span>
+          <button class="button" type="submit">Product opslaan</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section id="filter-product-modal" class="modal-shell" aria-hidden="true">
+    <div class="modal-backdrop" data-modal-close></div>
+    <div class="modal-card">
+      <div class="toolbar modal-toolbar">
+        <div class="section-title no-space">
+          <h2>Producten filteren</h2>
+        </div>
+        <button class="button secondary small" type="button" data-modal-close>Sluiten</button>
+      </div>
+      <form method="get" class="form-grid">
+        <label>
+          <span>{{ ui_settings.category_label }}</span>
+          <select name="category">
+            <option value="">Alle categorieen</option>
+            {% for category in categories %}
+              <option value="{{ category }}" {% if category == selected_category %}selected{% endif %}>{{ category }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          <span>Sorteren op</span>
+          <select name="sort">
+            <option value="description" {% if selected_sort == 'description' %}selected{% endif %}>Omschrijving</option>
+            <option value="article_number" {% if selected_sort == 'article_number' %}selected{% endif %}>Artikelnummer</option>
+            <option value="stock_quantity" {% if selected_sort == 'stock_quantity' %}selected{% endif %}>Huidige voorraad</option>
+            <option value="cost" {% if selected_sort == 'cost' %}selected{% endif %}>Kostprijs</option>
+            <option value="profit_margin" {% if selected_sort == 'profit_margin' %}selected{% endif %}>Winstmarge</option>
+            <option value="category" {% if selected_sort == 'category' %}selected{% endif %}>Categorie</option>
+            <option value="created_at" {% if selected_sort == 'created_at' %}selected{% endif %}>Nieuwste</option>
+          </select>
+        </label>
+        <label>
+          <span>Richting</span>
+          <select name="direction">
+            <option value="asc" {% if selected_direction == 'asc' %}selected{% endif %}>Oplopend</option>
+            <option value="desc" {% if selected_direction == 'desc' %}selected{% endif %}>Aflopend</option>
+          </select>
+        </label>
+        <label>
+          <span>Zoeken</span>
+          <input type="text" name="search" value="{{ selected_search }}" placeholder="Zoek producten">
+        </label>
+        <div class="modal-footer">
+          <span></span>
+          <button class="button secondary" type="submit">Toepassen</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+{% endblock %}

@@ -1,0 +1,134 @@
+{% extends "layout.html" %}
+
+{% block title %}Instellingen | {{ ui_settings.business_name }}{% endblock %}
+
+{% block content %}
+  <section class="card">
+    <div class="section-title">
+      <h1>Instellingen</h1>
+      <p class="muted">Pas labels en bedrijfsgegevens aan die in de app worden gebruikt.</p>
+    </div>
+    <form method="post" class="grid two-columns">
+      <article class="card inset-card">
+        <div class="section-title">
+          <h2>Algemeen</h2>
+        </div>
+        <div class="stack">
+          <label>
+            <span>Bedrijfsnaam</span>
+            <input type="text" name="business_name" value="{{ settings.business_name }}" required>
+          </label>
+          <label>
+            <span>Ondertitel</span>
+            <input type="text" name="business_tagline" value="{{ settings.business_tagline }}" required>
+          </label>
+        </div>
+      </article>
+
+      <article class="card inset-card">
+        <div class="section-title">
+          <h2>Labels productvelden</h2>
+        </div>
+        <div class="form-grid">
+          <label>
+            <span>Artikelnummer</span>
+            <input type="text" name="article_number_label" value="{{ settings.article_number_label }}" required>
+          </label>
+          <label>
+            <span>Omschrijving</span>
+            <input type="text" name="description_label" value="{{ settings.description_label }}" required>
+          </label>
+          <label>
+            <span>Label eenheid</span>
+            <input type="text" name="unit_label" value="{{ settings.unit_label }}" required>
+          </label>
+          <label>
+            <span>Label aantal per aankoop</span>
+            <input type="text" name="purchase_quantity_label" value="{{ settings.purchase_quantity_label }}" required>
+          </label>
+          <label>
+            <span>Label aankoopprijs</span>
+            <input type="text" name="purchase_price_label" value="{{ settings.purchase_price_label }}" required>
+          </label>
+          <label>
+            <span>Label huidige voorraad</span>
+            <input type="text" name="stock_quantity_label" value="{{ settings.stock_quantity_label }}" required>
+          </label>
+          <label>
+            <span>Label winstmarge</span>
+            <input type="text" name="profit_margin_label" value="{{ settings.profit_margin_label }}" required>
+          </label>
+          <label>
+            <span>Label categorie</span>
+            <input type="text" name="category_label" value="{{ settings.category_label }}" required>
+          </label>
+        </div>
+      </article>
+
+      <article class="card inset-card">
+        <div class="section-title">
+          <h2>Categorieen</h2>
+        </div>
+        <div class="stack">
+          <label>
+            <span>Lijst categorieen</span>
+            <textarea name="product_categories" rows="10" placeholder="Een categorie per lijn">{{ settings.product_categories }}</textarea>
+          </label>
+          <p class="muted">Voeg een categorie per lijn toe. Deze waarden worden gebruikt in de productcategorie-keuzelijst.</p>
+        </div>
+      </article>
+
+      <div class="button-row">
+        <button class="button" type="submit">Instellingen opslaan</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="toolbar">
+      <div class="section-title no-space">
+        <h2>Back-ups</h2>
+      </div>
+      <form method="post" action="{{ url_for('backup_database') }}">
+        <button class="button secondary" type="submit">Back-up maken</button>
+      </form>
+    </div>
+    {% if backup_files %}
+      <ul class="simple-list">
+        {% for backup in backup_files %}
+          <li>{{ backup.name }}</li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">Nog geen back-ups aangemaakt.</p>
+    {% endif %}
+  </section>
+
+  <section class="card danger-zone">
+    <div class="toolbar">
+      <div class="section-title no-space">
+        <h2>Database wissen</h2>
+        <p class="muted">Verwijder alle producten, werven, voorraadbewegingen en instellingen.</p>
+      </div>
+      <button class="button danger" type="button" data-modal-open="#reset-database-modal">Alles verwijderen</button>
+    </div>
+  </section>
+
+  <section id="reset-database-modal" class="modal-shell" aria-hidden="true">
+    <div class="modal-backdrop" data-modal-close></div>
+    <div class="modal-card modal-card-narrow">
+      <div class="toolbar modal-toolbar">
+        <div class="section-title no-space">
+          <h2>Waarschuwing</h2>
+        </div>
+        <button class="button secondary small" type="button" data-modal-close>Sluiten</button>
+      </div>
+      <p>Deze actie verwijdert alle gegevens uit de database.</p>
+      <p class="muted">Dit kan niet ongedaan worden gemaakt. Maak eerst een back-up als je deze gegevens later nog nodig hebt.</p>
+      <form method="post" action="{{ url_for('reset_database') }}" class="modal-footer">
+        <span></span>
+        <button class="button danger" type="submit">Definitief verwijderen</button>
+      </form>
+    </div>
+  </section>
+{% endblock %}

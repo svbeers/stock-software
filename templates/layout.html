@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="nl">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}{{ ui_settings.business_name }}{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="hazard-bar"></div>
+      <div class="shell nav-row">
+        <div>
+          <a class="brand" href="{{ url_for('index') }}">{{ ui_settings.business_name }}</a>
+          <p class="subtitle">{{ ui_settings.business_tagline }}</p>
+        </div>
+        <nav class="nav-links">
+          {% if (not auth_enabled) or is_logged_in %}
+            <a href="{{ url_for('index') }}">Dashboard</a>
+            <a href="{{ url_for('products') }}">Producten</a>
+            <a href="{{ url_for('jobs') }}">Werven</a>
+            <a href="{{ url_for('settings') }}">Instellingen</a>
+          {% endif %}
+          {% if auth_enabled and is_logged_in %}
+            <span class="nav-user">{{ admin_username }}</span>
+            <form method="post" action="{{ url_for('logout') }}" class="inline-form">
+              <button class="button secondary small" type="submit">Afmelden</button>
+            </form>
+          {% endif %}
+        </nav>
+      </div>
+    </header>
+
+    <main class="shell page">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <section class="flash-stack">
+            {% for category, message in messages %}
+              <article class="flash flash-{{ category }}">{{ message }}</article>
+            {% endfor %}
+          </section>
+        {% endif %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </main>
+    <script>
+      document.querySelectorAll("[data-toggle-target]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const selector = button.getAttribute("data-toggle-target");
+          const panel = document.querySelector(selector);
+          if (!panel) return;
+          panel.classList.toggle("is-open");
+        });
+      });
+
+      const setModalState = (modal, isOpen) => {
+        if (!modal) return;
+        modal.classList.toggle("is-open", isOpen);
+        modal.setAttribute("aria-hidden", isOpen ? "false" : "true");
+      };
+
+      document.querySelectorAll("[data-modal-open]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const selector = button.getAttribute("data-modal-open");
+          setModalState(document.querySelector(selector), true);
+        });
+      });
+
+      document.querySelectorAll(".modal-shell").forEach((modal) => {
+        modal.querySelectorAll("[data-modal-close]").forEach((closeButton) => {
+          closeButton.addEventListener("click", () => setModalState(modal, false));
+        });
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape") return;
+        document.querySelectorAll(".modal-shell.is-open").forEach((modal) => {
+          setModalState(modal, false);
+        });
+      });
+    </script>
+  </body>
+</html>

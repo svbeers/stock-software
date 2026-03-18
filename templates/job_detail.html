@@ -1,0 +1,325 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ job["name"] }} | {{ ui_settings.business_name }}{% endblock %}
+
+{% block content %}
+  <section class="grid two-columns">
+    <article class="card">
+      <p class="eyebrow">Job</p>
+      <h1>{{ job["name"] }}</h1>
+      <p class="muted">Klant: {{ job["client_name"] or "Niet opgegeven" }}</p>
+      <p class="muted">Status: {% if job["is_archived"] %}Gearchiveerd{% else %}Actief{% endif %}</p>
+      {% if job["notes"] %}
+        <p>{{ job["notes"] }}</p>
+      {% endif %}
+      <div class="button-row subdued-actions">
+        <a class="button secondary" href="{{ url_for('jobs', view='archived' if job['is_archived'] else 'active') }}">Terug naar werven</a>
+        <a class="button secondary" href="{{ url_for('export_job_text', job_id=job['id']) }}" target="_blank">Tekstexport openen</a>
+        <button class="button secondary" type="button" data-modal-open="#edit-job-modal">Werf bewerken</button>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="section-title">
+        <h2>Totalen</h2>
+      </div>
+      <div class="stats-grid compact">
+        <article class="stat-card alt">
+          <p class="stat-label">Totale hoeveelheid</p>
+          <p class="stat-value">{{ "%.2f"|format(totals["total_quantity"]) }}</p>
+        </article>
+        <article class="stat-card alt">
+          <p class="stat-label">Kost</p>
+          <p class="stat-value">EUR {{ "%.2f"|format(totals["total_cost"]) }}</p>
+        </article>
+        <article class="stat-card alt">
+          <p class="stat-label">Verkoop</p>
+          <p class="stat-value">EUR {{ "%.2f"|format(totals["total_sale"]) }}</p>
+        </article>
+        <article class="stat-card alt">
+          <p class="stat-label">Nog niet gefactureerd</p>
+          <p class="stat-value">EUR {{ "%.2f"|format(totals["uninvoiced_sale"]) }}</p>
+        </article>
+      </div>
+    </article>
+  </section>
+
+  <section class="card">
+    <div class="toolbar">
+      <div class="section-title no-space">
+        <h2>Werfacties</h2>
+      </div>
+    </div>
+    <article>
+      <div class="section-title">
+        <h2></h2>
+      </div>
+      <div class="stack">
+        <form method="post" action="{{ url_for('archive_job', job_id=job['id']) }}">
+          <button class="button secondary" type="submit">{% if job["is_archived"] %}Werf opnieuw activeren{% else %}Werf archiveren{% endif %}</button>
+        </form>
+        <form method="post" action="{{ url_for('delete_job', job_id=job['id']) }}">
+          <button class="button danger" type="submit">Werf verwijderen</button>
+        </form>
+        <p class="muted">Bij het verwijderen van een werf wordt het materiaal terug in voorraad gezet.</p>
+      </div>
+    </article>
+  </section>
+
+  <section class="card">
+    <div class="toolbar">
+      <div class="section-title no-space">
+        <h2>Gebruikte materialen</h2>
+      </div>
+      <button class="button" type="button" data-modal-open="#add-material-modal">Materiaal toevoegen</button>
+    </div>
+    {% if materials %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Omschrijving</th>
+              <th>Aantal</th>
+              <th>Factuur</th>
+              <th>Totaal</th>
+              <th class="compact-action-cell"> </th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for material in materials %}
+              {% set unit_selling = calculate_sale_price(material["unit_cost_snapshot"], material["profit_margin_snapshot"]) %}
+              <tr>
+                <td>{{ material["description_snapshot"] }}</td>
+                <td>
+                  {{ format_quantity(material["quantity"]) }} {{ material["unit_snapshot"] }}
+                  {% if material["meter_start_snapshot"] is not none and material["meter_end_snapshot"] is not none %}
+                    <div class="muted">Kabel {{ format_quantity(material["meter_start_snapshot"]) }} tot {{ format_quantity(material["meter_end_snapshot"]) }}</div>
+                  {% endif %}
+                </td>
+                <td>{{ material["invoice_number"] or "-" }}</td>
+                <td>EUR {{ "%.2f"|format(material["quantity"] * unit_selling) }}</td>
+                <td class="compact-action-cell">
+                  <button class="gear-button" type="button" data-modal-open="#material-edit-{{ material['id'] }}" aria-label="Materiaalregel bewerken">
+                    <span aria-hidden="true">&#9881;</span>
+                  </button>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% for material in materials %}
+        {% set unit_selling = calculate_sale_price(material["unit_cost_snapshot"], material["profit_margin_snapshot"]) %}
+        <section id="material-edit-{{ material['id'] }}" class="modal-shell" aria-hidden="true">
+          <div class="modal-backdrop" data-modal-close></div>
+          <div class="modal-card">
+            <div class="toolbar modal-toolbar">
+              <div class="section-title no-space">
+                <h2>Materiaalregel bewerken</h2>
+                <p class="muted">{{ material["description_snapshot"] }}</p>
+              </div>
+              <button class="button secondary small" type="button" data-modal-close>Sluiten</button>
+            </div>
+            <form method="post" action="{{ url_for('update_job_material', job_id=job['id'], material_id=material['id']) }}" class="form-grid material-edit-form" data-meter-tracking="{{ material['product_meter_tracking_enabled'] }}">
+              <label>
+                <span>Gebruikte hoeveelheid</span>
+                <input type="number" name="quantity" step="0.01" min="0.01" value="{{ material['quantity'] }}" data-material-quantity required>
+              </label>
+              <label class="material-meter-field">
+                <span>Start kabelnummer</span>
+                <input type="number" name="meter_start" step="0.01" value="{{ '' if material['meter_start_snapshot'] is none else material['meter_start_snapshot'] }}" data-material-meter-start>
+              </label>
+              <label class="material-meter-field">
+                <span>Eind kabelnummer</span>
+                <input type="number" name="meter_end" step="0.01" value="{{ '' if material['meter_end_snapshot'] is none else material['meter_end_snapshot'] }}" data-material-meter-end>
+              </label>
+              <p class="muted full-width material-meter-field">Gebruik ofwel het aantal meters ofwel de kabelnummers.</p>
+              <label class="checkbox-row">
+                <span>Gefactureerd</span>
+                <input type="checkbox" name="is_invoiced" value="on" data-invoice-toggle {% if material['is_invoiced'] %}checked{% endif %}>
+              </label>
+              <label class="invoice-field{% if material['is_invoiced'] %} is-visible{% endif %}">
+                <span>Factuurnummer</span>
+                <input type="text" name="invoice_number" value="{{ material['invoice_number'] }}" placeholder="Bijvoorbeeld 2026-014" data-invoice-input {% if material['is_invoiced'] %}required{% endif %}>
+              </label>
+              <div class="modal-footer">
+                <span class="muted">Verkoopprijs: EUR {{ "%.2f"|format(unit_selling) }}/{{ material["unit_snapshot"] }}</span>
+                <div class="button-row">
+                  {% if material["is_invoiced"] %}
+                    <button class="button secondary" type="submit" name="clear_invoice" value="1">Factuur ongedaan maken</button>
+                  {% endif %}
+                  <button class="button" type="submit">Opslaan</button>
+                </div>
+              </div>
+            </form>
+            <section class="modal-section danger-zone">
+              <div class="toolbar">
+                <div class="section-title no-space">
+                  <h3>Materiaalregel verwijderen</h3>
+                </div>
+                <form method="post" action="{{ url_for('delete_job_material', job_id=job['id'], material_id=material['id']) }}" class="inline-form">
+                  <button class="button danger" type="submit">Verwijderen</button>
+                </form>
+              </div>
+            </section>
+          </div>
+        </section>
+      {% endfor %}
+    {% else %}
+      <p class="muted">Nog geen materialen toegevoegd aan deze werf.</p>
+    {% endif %}
+  </section>
+
+  <section id="edit-job-modal" class="modal-shell" aria-hidden="true">
+    <div class="modal-backdrop" data-modal-close></div>
+    <div class="modal-card">
+      <div class="toolbar modal-toolbar">
+        <div class="section-title no-space">
+          <h2>Werf bewerken</h2>
+        </div>
+        <button class="button secondary small" type="button" data-modal-close>Sluiten</button>
+      </div>
+      <form method="post" action="{{ url_for('update_job', job_id=job['id']) }}" class="form-grid">
+        <label>
+          <span>Naam werf</span>
+          <input type="text" name="name" value="{{ job['name'] }}" required>
+        </label>
+        <label>
+          <span>Klantnaam</span>
+          <input type="text" name="client_name" value="{{ job['client_name'] }}">
+        </label>
+        <label class="full-width">
+          <span>Notities</span>
+          <textarea name="notes" rows="4">{{ job['notes'] }}</textarea>
+        </label>
+        <div class="modal-footer">
+          <span></span>
+          <button class="button" type="submit">Werf opslaan</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section id="add-material-modal" class="modal-shell" aria-hidden="true">
+    <div class="modal-backdrop" data-modal-close></div>
+    <div class="modal-card">
+      <div class="toolbar modal-toolbar">
+        <div class="section-title no-space">
+          <h2>Materiaal toevoegen aan werf</h2>
+        </div>
+        <button class="button secondary small" type="button" data-modal-close>Sluiten</button>
+      </div>
+      {% if products %}
+        <form method="post" action="{{ url_for('add_job_material', job_id=job['id']) }}" class="form-grid">
+          <label class="full-width">
+            <span>Product</span>
+            <select name="product_id" id="job-product-select" required>
+              {% for product in products %}
+                <option value="{{ product['id'] }}" data-meter-tracking="{{ product['meter_tracking_enabled'] }}" data-last-meter-end="{{ '' if product['last_meter_end'] is none else format_quantity(product['last_meter_end']) }}">
+                  {{ product["description"] }} | {{ product["article_number"] }} | stock {{ format_quantity(product["stock_quantity"]) }} {{ product["unit"] }} | buy {{ format_quantity(product["purchase_quantity"]) }} for EUR {{ "%.2f"|format(product["purchase_price"]) }} | sell EUR {{ "%.2f"|format(calculate_sale_price(product["cost"], product["profit_margin"])) }}/{{ product["unit"] }}
+                </option>
+              {% endfor %}
+            </select>
+          </label>
+          <label id="quantity-label">
+            <span id="quantity-label-text">Gebruikte hoeveelheid</span>
+            <input type="number" id="quantity-input" name="quantity" step="0.01" min="0.01" required>
+          </label>
+          <label id="meter-start-label" class="meter-field">
+            <span>Start kabelnummer</span>
+            <input type="number" id="meter-start-input" name="meter_start" step="0.01">
+          </label>
+          <label id="meter-end-label" class="meter-field">
+            <span>Eind kabelnummer</span>
+            <input type="number" id="meter-end-input" name="meter_end" step="0.01">
+          </label>
+          <p id="meter-help" class="muted full-width meter-field">Gebruik ofwel het aantal meters ofwel de kabelnummers. Voorbeeld: 82441 tot 82456 betekent 15 meter gebruikt.</p>
+          <p id="meter-remark" class="muted full-width meter-field"></p>
+          <div class="modal-footer">
+            <span></span>
+            <button class="button" type="submit">Toevoegen aan werf</button>
+          </div>
+        </form>
+      {% else %}
+        <p class="muted">Voeg eerst producten toe voordat je materiaal aan een werf koppelt.</p>
+      {% endif %}
+    </div>
+  </section>
+  <script>
+    (() => {
+      const select = document.getElementById("job-product-select");
+      if (select) {
+        const quantityLabel = document.getElementById("quantity-label");
+        const quantityInput = document.getElementById("quantity-input");
+        const meterStartLabel = document.getElementById("meter-start-label");
+        const meterEndLabel = document.getElementById("meter-end-label");
+        const meterStartInput = document.getElementById("meter-start-input");
+        const meterEndInput = document.getElementById("meter-end-input");
+        const meterHelp = document.getElementById("meter-help");
+        const meterRemark = document.getElementById("meter-remark");
+        const quantityLabelText = document.getElementById("quantity-label-text");
+
+        const updateMeterFields = () => {
+          const option = select.options[select.selectedIndex];
+          const usesMeterTracking = option && option.dataset.meterTracking === "1";
+          const lastMeterEnd = option ? option.dataset.lastMeterEnd : "";
+          [meterStartLabel, meterEndLabel, meterHelp].forEach((element) => {
+            if (element) element.classList.toggle("is-visible", usesMeterTracking);
+          });
+          if (meterRemark) {
+            meterRemark.classList.toggle("is-visible", usesMeterTracking);
+            if (usesMeterTracking) {
+              meterRemark.textContent = lastMeterEnd
+                ? `Laatst gebruikt kabelnummer in een vorige werf: ${lastMeterEnd}`
+                : "Nog geen eerder kabelnummer opgeslagen voor dit product.";
+            } else {
+              meterRemark.textContent = "";
+            }
+          }
+          if (quantityLabel) quantityLabel.classList.remove("is-hidden");
+          if (quantityInput) {
+            quantityInput.required = !usesMeterTracking;
+          }
+          if (quantityLabelText) {
+            quantityLabelText.textContent = usesMeterTracking ? "Gebruikte meters" : "Gebruikte hoeveelheid";
+          }
+          if (meterStartInput && meterEndInput && !usesMeterTracking) {
+            meterStartInput.value = "";
+            meterEndInput.value = "";
+          }
+        };
+
+        select.addEventListener("change", updateMeterFields);
+        updateMeterFields();
+      }
+
+      document.querySelectorAll(".material-edit-form").forEach((form) => {
+        const usesMeterTracking = form.dataset.meterTracking === "1";
+        const meterFields = form.querySelectorAll(".material-meter-field");
+        const invoiceField = form.querySelector(".invoice-field");
+        const invoiceToggle = form.querySelector("[data-invoice-toggle]");
+        const invoiceInput = form.querySelector("[data-invoice-input]");
+
+        meterFields.forEach((element) => {
+          element.classList.toggle("is-visible", usesMeterTracking);
+        });
+
+        const updateInvoiceField = () => {
+          const isChecked = invoiceToggle && invoiceToggle.checked;
+          if (invoiceField) {
+            invoiceField.classList.toggle("is-visible", Boolean(isChecked));
+          }
+          if (invoiceInput) {
+            invoiceInput.required = Boolean(isChecked);
+            if (!isChecked) invoiceInput.value = "";
+          }
+        };
+
+        if (invoiceToggle) {
+          invoiceToggle.addEventListener("change", updateInvoiceField);
+          updateInvoiceField();
+        }
+      });
+    })();
+  </script>
+{% endblock %}

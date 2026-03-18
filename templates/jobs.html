@@ -1,0 +1,91 @@
+{% extends "layout.html" %}
+
+{% block title %}Werven | {{ ui_settings.business_name }}{% endblock %}
+
+{% block content %}
+  <section class="grid two-columns">
+    <article class="card">
+      <div class="toolbar">
+        <div class="section-title no-space">
+          <h1>Werven</h1>
+        </div>
+        <button class="button small" type="button" data-modal-open="#create-job-modal">Werf toevoegen</button>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="toolbar">
+        <a class="button {% if current_view == 'active' %}{% else %}secondary {% endif %}small" href="{{ url_for('jobs', view='active') }}">Actieve werven</a>
+        <a class="button {% if current_view == 'archived' %}{% else %}secondary {% endif %}small" href="{{ url_for('jobs', view='archived') }}">Gearchiveerde werven</a>
+      </div>
+    </article>
+  </section>
+
+  <section class="card">
+    <div class="section-title">
+      <h2>{% if current_view == 'archived' %}Gearchiveerde werven{% else %}Actieve werven{% endif %}</h2>
+    </div>
+    {% if jobs %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Werf</th>
+              <th>Klant</th>
+              <th>Materiaalregels</th>
+              <th>Totale kost</th>
+              <th>Totale verkoop</th>
+              <th>Winst</th>
+              <th>Openen</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for job in jobs %}
+              <tr>
+                <td>{{ job["name"] }}</td>
+                <td>{{ job["client_name"] or "-" }}</td>
+                <td>{{ job["line_count"] }}</td>
+                <td>EUR {{ "%.2f"|format(job["total_cost"]) }}</td>
+                <td>EUR {{ "%.2f"|format(job["total_sale"]) }}</td>
+                <td>EUR {{ "%.2f"|format(job["total_profit"]) }}</td>
+                <td><a class="button small secondary" href="{{ url_for('job_detail', job_id=job['id']) }}">Openen</a></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="muted">Nog geen werven.</p>
+    {% endif %}
+  </section>
+
+  <section id="create-job-modal" class="modal-shell" aria-hidden="true">
+    <div class="modal-backdrop" data-modal-close></div>
+    <div class="modal-card">
+      <div class="toolbar modal-toolbar">
+        <div class="section-title no-space">
+          <h2>Werf toevoegen</h2>
+        </div>
+        <button class="button secondary small" type="button" data-modal-close>Sluiten</button>
+      </div>
+      <form method="post" action="{{ url_for('create_job') }}" class="form-grid">
+        <label>
+          <span>Naam werf</span>
+          <input type="text" name="name" placeholder="Renovatie keuken" required>
+        </label>
+        <label>
+          <span>Klantnaam</span>
+          <input type="text" name="client_name" placeholder="Klant of bedrijf">
+        </label>
+        <label class="full-width">
+          <span>Notities</span>
+          <textarea name="notes" rows="4" placeholder="Optionele notities"></textarea>
+        </label>
+        <div class="modal-footer">
+          <span></span>
+          <button class="button" type="submit">Werf aanmaken</button>
+        </div>
+      </form>
+    </div>
+  </section>
+{% endblock %}

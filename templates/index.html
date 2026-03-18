@@ -1,0 +1,36 @@
+{% extends "layout.html" %}
+
+{% block title %}Dashboard | {{ ui_settings.business_name }}{% endblock %}
+
+{% block content %}
+  <section class="hero hero-industrial compact-hero">
+    <div>
+      <p class="eyebrow">Overzicht</p>
+      <h1>{{ ui_settings.business_name }}</h1>
+    </div>
+    <div class="button-row">
+      <a class="button" href="{{ url_for('products') }}">Producten</a>
+      <a class="button secondary" href="{{ url_for('jobs') }}">Werven</a>
+      <a class="button secondary" href="{{ url_for('settings') }}">Instellingen</a>
+    </div>
+  </section>
+
+  <section class="stats-grid">
+    <article class="card stat-card">
+      <p class="stat-label">Producten</p>
+      <p class="stat-value">{{ total_products }}</p>
+    </article>
+    <article class="card stat-card">
+      <p class="stat-label">Werven</p>
+      <p class="stat-value">{{ total_jobs }}</p>
+    </article>
+    <article class="card stat-card">
+      <p class="stat-label">Totale voorraadwaarde</p>
+      <p class="stat-value">EUR {{ "%.2f"|format(stock_value) }}</p>
+    </article>
+    <article class="card stat-card">
+      <p class="stat-label">Niet op voorraad</p>
+      <p class="stat-value">{{ low_stock_count }}</p>
+    </article>
+  </section>
+{% endblock %}

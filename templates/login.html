@@ -1,0 +1,28 @@
+{% extends "layout.html" %}
+
+{% block title %}Aanmelden | {{ ui_settings.business_name }}{% endblock %}
+
+{% block content %}
+  <section class="login-shell">
+    <article class="card login-card">
+      <p class="eyebrow">Beveiligde toegang</p>
+      <h1>Aanmelden</h1>
+      <p class="muted">Log in om de voorraad en werven te beheren.</p>
+      <form method="post" class="form-grid">
+        <input type="hidden" name="next" value="{{ next_url }}">
+        <label>
+          <span>Gebruikersnaam</span>
+          <input type="text" name="username" value="{{ admin_username }}" required>
+        </label>
+        <label>
+          <span>Wachtwoord</span>
+          <input type="password" name="password" required>
+        </label>
+        <div class="modal-footer">
+          <span></span>
+          <button class="button" type="submit">Aanmelden</button>
+        </div>
+      </form>
+    </article>
+  </section>
+{% endblock %}

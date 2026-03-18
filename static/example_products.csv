@@ -1,0 +1,5 @@
+article_number,description,unit,purchase_quantity,purchase_price,stock_quantity,profit_margin,category
+CABLE-3G25,Cable XVB 3G2.5,m,100,89.50,250,35,Cable
+TUBE-20,Rigid tube 20mm,m,25,18.50,50,30,Tube
+BREAKER-B16,Breaker B16,piece,12,66.00,24,28,Breaker
+CLIP-16,Cable clip 16mm,piece,100,11.18,300,40,Fixings
