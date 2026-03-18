@@ -771,7 +771,7 @@ def save_product_record(product_data: dict[str, Any], product_id: int | None = N
                 meter_tracking_enabled,
                 category
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 product_data["article_number"],
