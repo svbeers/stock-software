@@ -36,7 +36,7 @@
               <p class="muted">{{ category_products|length }} producten</p>
             </div>
             <div class="table-wrap">
-              <table>
+              <table class="responsive-table">
                 <thead>
                   <tr>
                     <th>{{ ui_settings.article_number_label }}</th>
@@ -50,8 +50,8 @@
                 <tbody>
                   {% for product in category_products %}
                     <tr>
-                      <td>{{ product["article_number"] }}</td>
-                      <td>
+                      <td data-label="{{ ui_settings.article_number_label }}">{{ product["article_number"] }}</td>
+                      <td data-label="{{ ui_settings.description_label }}">
                         {% if product["image_url"] %}
                           <button class="product-preview-trigger" type="button" data-modal-open="#product-image-{{ product['id'] }}">
                             {{ product["description"] }}
@@ -60,10 +60,10 @@
                           {{ product["description"] }}
                         {% endif %}
                       </td>
-                      <td>{{ format_quantity(product["stock_quantity"]) }} {{ product["unit"] }}</td>
-                      <td>EUR {{ "%.2f"|format(product["cost"]) }}</td>
-                      <td>EUR {{ "%.2f"|format(calculate_sale_price(product["cost"], product["profit_margin"])) }}</td>
-                      <td class="compact-action-cell">
+                      <td data-label="{{ ui_settings.stock_quantity_label }}">{{ format_quantity(product["stock_quantity"]) }} {{ product["unit"] }}</td>
+                      <td data-label="Kostprijs">EUR {{ "%.2f"|format(product["cost"]) }}</td>
+                      <td data-label="Verkoopprijs">EUR {{ "%.2f"|format(calculate_sale_price(product["cost"], product["profit_margin"])) }}</td>
+                      <td data-label="Actie" class="compact-action-cell">
                         <button class="gear-button" type="button" data-modal-open="#product-edit-{{ product['id'] }}" aria-label="Product bewerken">
                           <span aria-hidden="true">&#9881;</span>
                         </button>
@@ -473,7 +473,7 @@
       const closeButton = document.getElementById("barcode-scanner-close");
       if (!scannerModal || !status || !manualInput || !manualApplyButton || !closeButton) return;
 
-      const setModalState = (isOpen) => {
+      const setScannerModalState = (isOpen) => {
         scannerModal.classList.toggle("is-open", isOpen);
         scannerModal.setAttribute("aria-hidden", isOpen ? "false" : "true");
       };
@@ -508,25 +508,30 @@
         }
         scannerStarting = true;
         try {
+          const scannerConfig = {
+            fps: 10,
+            qrbox: { width: 260, height: 140 },
+            rememberLastUsedCamera: true
+          };
+          if (typeof Html5QrcodeScanType !== "undefined") {
+            scannerConfig.supportedScanTypes = [
+              Html5QrcodeScanType.SCAN_TYPE_CAMERA,
+              Html5QrcodeScanType.SCAN_TYPE_FILE
+            ];
+          }
+          if (typeof Html5QrcodeSupportedFormats !== "undefined") {
+            scannerConfig.formatsToSupport = [
+              Html5QrcodeSupportedFormats.EAN_13,
+              Html5QrcodeSupportedFormats.EAN_8,
+              Html5QrcodeSupportedFormats.CODE_128,
+              Html5QrcodeSupportedFormats.CODE_39,
+              Html5QrcodeSupportedFormats.UPC_A,
+              Html5QrcodeSupportedFormats.UPC_E
+            ];
+          }
           scanner = new Html5QrcodeScanner(
             readerId,
-            {
-              fps: 10,
-              qrbox: { width: 260, height: 140 },
-              rememberLastUsedCamera: true,
-              supportedScanTypes: [
-                Html5QrcodeScanType.SCAN_TYPE_CAMERA,
-                Html5QrcodeScanType.SCAN_TYPE_FILE
-              ],
-              formatsToSupport: [
-                Html5QrcodeSupportedFormats.EAN_13,
-                Html5QrcodeSupportedFormats.EAN_8,
-                Html5QrcodeSupportedFormats.CODE_128,
-                Html5QrcodeSupportedFormats.CODE_39,
-                Html5QrcodeSupportedFormats.UPC_A,
-                Html5QrcodeSupportedFormats.UPC_E
-              ]
-            },
+            scannerConfig,
             false
           );
           scanner.render(
@@ -534,7 +539,7 @@
               applyBarcode(decodedText);
               status.textContent = `Barcode gevonden: ${decodedText}`;
               stopScanner();
-              setModalState(false);
+              setScannerModalState(false);
             },
             () => {}
           );
@@ -554,7 +559,7 @@
           currentMode = button.getAttribute("data-barcode-scan-mode") || "field";
           manualInput.value = "";
           status.textContent = "Gebruik de camera of kies een foto van een barcode.";
-          setModalState(true);
+          setScannerModalState(true);
           window.setTimeout(startScanner, 0);
         });
       });
@@ -568,7 +573,7 @@
         applyBarcode(value);
         status.textContent = `Barcode ingevuld: ${value}`;
         stopScanner();
-        setModalState(false);
+        setScannerModalState(false);
       });
 
       closeButton.addEventListener("click", stopScanner);

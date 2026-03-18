@@ -27,7 +27,7 @@
     </div>
     {% if jobs %}
       <div class="table-wrap">
-        <table>
+        <table class="responsive-table">
           <thead>
             <tr>
               <th>Werf</th>
@@ -42,13 +42,13 @@
           <tbody>
             {% for job in jobs %}
               <tr>
-                <td>{{ job["name"] }}</td>
-                <td>{{ job["client_name"] or "-" }}</td>
-                <td>{{ job["line_count"] }}</td>
-                <td>EUR {{ "%.2f"|format(job["total_cost"]) }}</td>
-                <td>EUR {{ "%.2f"|format(job["total_sale"]) }}</td>
-                <td>EUR {{ "%.2f"|format(job["total_profit"]) }}</td>
-                <td><a class="button small secondary" href="{{ url_for('job_detail', job_id=job['id']) }}">Openen</a></td>
+                <td data-label="Werf">{{ job["name"] }}</td>
+                <td data-label="Klant">{{ job["client_name"] or "-" }}</td>
+                <td data-label="Materiaalregels">{{ job["line_count"] }}</td>
+                <td data-label="Totale kost">EUR {{ "%.2f"|format(job["total_cost"]) }}</td>
+                <td data-label="Totale verkoop">EUR {{ "%.2f"|format(job["total_sale"]) }}</td>
+                <td data-label="Winst">EUR {{ "%.2f"|format(job["total_profit"]) }}</td>
+                <td data-label="Openen"><a class="button small secondary" href="{{ url_for('job_detail', job_id=job['id']) }}">Openen</a></td>
               </tr>
             {% endfor %}
           </tbody>

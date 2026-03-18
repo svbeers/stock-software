@@ -81,7 +81,7 @@
     </div>
     {% if materials %}
       <div class="table-wrap">
-        <table>
+        <table class="responsive-table">
           <thead>
             <tr>
               <th>Omschrijving</th>
@@ -95,16 +95,16 @@
             {% for material in materials %}
               {% set unit_selling = calculate_sale_price(material["unit_cost_snapshot"], material["profit_margin_snapshot"]) %}
               <tr>
-                <td>{{ material["description_snapshot"] }}</td>
-                <td>
+                <td data-label="Omschrijving">{{ material["description_snapshot"] }}</td>
+                <td data-label="Aantal">
                   {{ format_quantity(material["quantity"]) }} {{ material["unit_snapshot"] }}
                   {% if material["meter_start_snapshot"] is not none and material["meter_end_snapshot"] is not none %}
                     <div class="muted">Kabel {{ format_quantity(material["meter_start_snapshot"]) }} tot {{ format_quantity(material["meter_end_snapshot"]) }}</div>
                   {% endif %}
                 </td>
-                <td>{{ material["invoice_number"] or "-" }}</td>
-                <td>EUR {{ "%.2f"|format(material["quantity"] * unit_selling) }}</td>
-                <td class="compact-action-cell">
+                <td data-label="Factuur">{{ material["invoice_number"] or "-" }}</td>
+                <td data-label="Totaal">EUR {{ "%.2f"|format(material["quantity"] * unit_selling) }}</td>
+                <td data-label="Actie" class="compact-action-cell">
                   <button class="gear-button" type="button" data-modal-open="#material-edit-{{ material['id'] }}" aria-label="Materiaalregel bewerken">
                     <span aria-hidden="true">&#9881;</span>
                   </button>
