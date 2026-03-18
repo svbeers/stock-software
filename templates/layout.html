@@ -10,24 +10,29 @@
     <header class="site-header">
       <div class="hazard-bar"></div>
       <div class="shell nav-row">
-        <div>
+        <div class="brand-block">
           <a class="brand" href="{{ url_for('index') }}">{{ ui_settings.business_name }}</a>
           <p class="subtitle">{{ ui_settings.business_tagline }}</p>
         </div>
-        <nav class="nav-links">
-          {% if (not auth_enabled) or is_logged_in %}
-            <a href="{{ url_for('index') }}">Dashboard</a>
-            <a href="{{ url_for('products') }}">Producten</a>
-            <a href="{{ url_for('jobs') }}">Werven</a>
-            <a href="{{ url_for('settings') }}">Instellingen</a>
-          {% endif %}
-          {% if auth_enabled and is_logged_in %}
-            <span class="nav-user">{{ admin_username }}</span>
-            <form method="post" action="{{ url_for('logout') }}" class="inline-form">
-              <button class="button secondary small" type="submit">Afmelden</button>
-            </form>
-          {% endif %}
-        </nav>
+        <div class="nav-tools">
+          <button class="mobile-menu-button" type="button" data-mobile-menu-toggle aria-expanded="false" aria-controls="site-nav">
+            Menu
+          </button>
+          <nav class="nav-links" id="site-nav">
+            {% if (not auth_enabled) or is_logged_in %}
+              <a href="{{ url_for('index') }}">Dashboard</a>
+              <a href="{{ url_for('products') }}">Producten</a>
+              <a href="{{ url_for('jobs') }}">Werven</a>
+              <a href="{{ url_for('settings') }}">Instellingen</a>
+            {% endif %}
+            {% if auth_enabled and is_logged_in %}
+              <span class="nav-user">{{ admin_username }}</span>
+              <form method="post" action="{{ url_for('logout') }}" class="inline-form">
+                <button class="button secondary small" type="submit">Afmelden</button>
+              </form>
+            {% endif %}
+          </nav>
+        </div>
       </div>
     </header>
 
@@ -52,6 +57,37 @@
           panel.classList.toggle("is-open");
         });
       });
+
+      const mobileMenuButton = document.querySelector("[data-mobile-menu-toggle]");
+      const mobileMenu = document.getElementById("site-nav");
+      if (mobileMenuButton && mobileMenu) {
+        const setMobileMenuState = (isOpen) => {
+          mobileMenu.classList.toggle("is-open", isOpen);
+          mobileMenuButton.setAttribute("aria-expanded", isOpen ? "true" : "false");
+        };
+
+        mobileMenuButton.addEventListener("click", () => {
+          setMobileMenuState(!mobileMenu.classList.contains("is-open"));
+        });
+
+        mobileMenu.querySelectorAll("a").forEach((link) => {
+          link.addEventListener("click", () => setMobileMenuState(false));
+        });
+
+        document.addEventListener("click", (event) => {
+          if (!mobileMenu.classList.contains("is-open")) return;
+          const clickedInsideMenu = mobileMenu.contains(event.target) || mobileMenuButton.contains(event.target);
+          if (!clickedInsideMenu) {
+            setMobileMenuState(false);
+          }
+        });
+
+        window.addEventListener("resize", () => {
+          if (window.innerWidth > 820) {
+            setMobileMenuState(false);
+          }
+        });
+      }
 
       const setModalState = (modal, isOpen) => {
         if (!modal) return;
