@@ -28,39 +28,72 @@
       <h2>Productlijst</h2>
     </div>
     {% if products %}
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>{{ ui_settings.article_number_label }}</th>
-              <th>{{ ui_settings.description_label }}</th>
-              <th>{{ ui_settings.category_label }}</th>
-              <th>{{ ui_settings.stock_quantity_label }}</th>
-              <th>Kostprijs</th>
-              <th>Verkoopprijs</th>
-              <th class="compact-action-cell"> </th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for product in products %}
-              <tr>
-                <td>{{ product["article_number"] }}</td>
-                <td>{{ product["description"] }}</td>
-                <td>{{ product["category"] }}</td>
-                <td>{{ format_quantity(product["stock_quantity"]) }} {{ product["unit"] }}</td>
-                <td>EUR {{ "%.2f"|format(product["cost"]) }}</td>
-                <td>EUR {{ "%.2f"|format(calculate_sale_price(product["cost"], product["profit_margin"])) }}</td>
-                <td class="compact-action-cell">
-                  <button class="gear-button" type="button" data-modal-open="#product-edit-{{ product['id'] }}" aria-label="Product bewerken">
-                    <span aria-hidden="true">&#9881;</span>
-                  </button>
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+      <div class="product-category-list">
+        {% for category_name, category_products in grouped_products %}
+          <section class="product-category-group">
+            <div class="section-title compact">
+              <h3>{{ category_name }}</h3>
+              <p class="muted">{{ category_products|length }} producten</p>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>{{ ui_settings.article_number_label }}</th>
+                    <th>{{ ui_settings.description_label }}</th>
+                    <th>{{ ui_settings.stock_quantity_label }}</th>
+                    <th>Kostprijs</th>
+                    <th>Verkoopprijs</th>
+                    <th class="compact-action-cell"> </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for product in category_products %}
+                    <tr>
+                      <td>{{ product["article_number"] }}</td>
+                      <td>
+                        {% if product["image_url"] %}
+                          <button class="product-preview-trigger" type="button" data-modal-open="#product-image-{{ product['id'] }}">
+                            {{ product["description"] }}
+                          </button>
+                        {% else %}
+                          {{ product["description"] }}
+                        {% endif %}
+                      </td>
+                      <td>{{ format_quantity(product["stock_quantity"]) }} {{ product["unit"] }}</td>
+                      <td>EUR {{ "%.2f"|format(product["cost"]) }}</td>
+                      <td>EUR {{ "%.2f"|format(calculate_sale_price(product["cost"], product["profit_margin"])) }}</td>
+                      <td class="compact-action-cell">
+                        <button class="gear-button" type="button" data-modal-open="#product-edit-{{ product['id'] }}" aria-label="Product bewerken">
+                          <span aria-hidden="true">&#9881;</span>
+                        </button>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        {% endfor %}
       </div>
       {% for product in products %}
+        {% if product['image_url'] %}
+          <section id="product-image-{{ product['id'] }}" class="modal-shell" aria-hidden="true">
+            <div class="modal-backdrop" data-modal-close></div>
+            <div class="modal-card modal-card-narrow">
+              <div class="toolbar modal-toolbar">
+                <div class="section-title no-space">
+                  <h2>{{ product["description"] }}</h2>
+                  <p class="muted">{{ product["article_number"] }}</p>
+                </div>
+                <button class="button secondary small" type="button" data-modal-close>Sluiten</button>
+              </div>
+              <div class="product-image-modal">
+                <img src="{{ product['image_url'] }}" alt="Afbeelding van {{ product['description'] }}" loading="lazy">
+              </div>
+            </div>
+          </section>
+        {% endif %}
         <section id="product-edit-{{ product['id'] }}" class="modal-shell" aria-hidden="true">
           <div class="modal-backdrop" data-modal-close></div>
           <div class="modal-card">
@@ -86,6 +119,10 @@
               <label>
                 <span>{{ ui_settings.description_label }}</span>
                 <input type="text" name="description" value="{{ product['description'] }}" required>
+              </label>
+              <label class="full-width">
+                <span>Afbeelding URL</span>
+                <input type="url" name="image_url" value="{{ product['image_url'] }}" placeholder="https://...">
               </label>
               <label>
                 <span>{{ ui_settings.unit_label }}</span>
@@ -113,12 +150,19 @@
               </label>
               <label>
                 <span>{{ ui_settings.category_label }}</span>
-                <select name="category" required>
+                <select name="category">
+                  <option value="" {% if not product['category'] or product['category'] not in categories %}selected{% endif %}></option>
                   {% for category in categories %}
                     <option value="{{ category }}" {% if category == product['category'] %}selected{% endif %}>{{ category }}</option>
                   {% endfor %}
                 </select>
               </label>
+              {% if product['image_url'] %}
+                <div class="full-width product-image-preview">
+                  <span>Voorbeeld</span>
+                  <img src="{{ product['image_url'] }}" alt="Voorbeeld van {{ product['description'] }}" loading="lazy">
+                </div>
+              {% endif %}
               <div class="modal-footer">
                 <p class="muted">Kostprijs: EUR {{ "%.4f"|format(product["cost"]) }}/{{ product["unit"] }}</p>
                 <button class="button" type="submit">Opslaan</button>
@@ -185,14 +229,15 @@
   <section class="card">
     <div class="toolbar">
       <div class="section-title no-space">
-        <h2>CSV-import</h2>
+        <h2>Import</h2>
       </div>
       <a class="button secondary small" href="{{ url_for('static', filename='example_products.csv') }}">Voorbeeld CSV</a>
     </div>
     <form method="post" action="{{ url_for('import_products') }}" enctype="multipart/form-data" class="search-form">
-      <input type="file" name="csv_file" accept=".csv,text/csv" required>
-      <button class="button small" type="submit">CSV importeren</button>
+      <input type="file" name="csv_file" accept=".csv,.xls,.xlsx,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+      <button class="button small" type="submit">Bestand importeren</button>
     </form>
+    <p class="muted">Ondersteunt CSV en Excel. Voor jouw leverancier worden `Artikel`, `Omschrijving`, `Per`, `Aantal` en `Totaal` automatisch ingelezen.</p>
   </section>
 
   <section id="add-product-modal" class="modal-shell" aria-hidden="true">
@@ -205,9 +250,10 @@
         <button class="button secondary small" type="button" data-modal-close>Sluiten</button>
       </div>
       <form method="post" action="{{ url_for('create_product') }}" class="form-grid">
+        <input type="hidden" name="confirm_overwrite" value="0" id="create-product-confirm-overwrite">
         <label>
           <span>{{ ui_settings.article_number_label }}</span>
-          <input type="text" name="article_number" required>
+          <input type="text" name="article_number" id="create-product-article-number" required>
         </label>
         <label>
           <span>{{ ui_settings.barcode_label }}</span>
@@ -219,6 +265,10 @@
         <label>
           <span>{{ ui_settings.description_label }}</span>
           <input type="text" name="description" required>
+        </label>
+        <label class="full-width">
+          <span>Afbeelding URL</span>
+          <input type="url" name="image_url" placeholder="https://...">
         </label>
         <label>
           <span>{{ ui_settings.unit_label }}</span>
@@ -246,7 +296,8 @@
         </label>
         <label>
           <span>{{ ui_settings.category_label }}</span>
-          <select name="category" required>
+          <select name="category">
+            <option value="" selected></option>
             {% for category in categories %}
               <option value="{{ category }}">{{ category }}</option>
             {% endfor %}
@@ -257,6 +308,26 @@
           <button class="button" type="submit">Product opslaan</button>
         </div>
       </form>
+    </div>
+  </section>
+
+  <section id="duplicate-product-modal" class="modal-shell" aria-hidden="true">
+    <div class="modal-backdrop" data-modal-close></div>
+    <div class="modal-card modal-card-narrow">
+      <div class="toolbar modal-toolbar">
+        <div class="section-title no-space">
+          <h2>Artikel bestaat al</h2>
+        </div>
+        <button class="button secondary small" type="button" data-modal-close>Sluiten</button>
+      </div>
+      <div class="stack">
+        <p id="duplicate-product-message">Dit artikelnummer bestaat al.</p>
+        <p class="muted">Kies overschrijven om het bestaande product bij te werken, of annuleer om terug te keren.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="button secondary" type="button" data-modal-close>Annuleren</button>
+        <button class="button" type="button" id="duplicate-product-confirm">Overschrijven</button>
+      </div>
     </div>
   </section>
 
@@ -336,6 +407,64 @@
   <script src="https://unpkg.com/html5-qrcode" defer></script>
   <script>
     (() => {
+      const setModalState = (modal, isOpen) => {
+        if (!modal) return;
+        modal.classList.toggle("is-open", isOpen);
+        modal.setAttribute("aria-hidden", isOpen ? "false" : "true");
+      };
+
+      const existingProducts = {
+        {% for product in products %}
+          {{ product['id'] }}: {
+            articleNumber: {{ product["article_number"]|tojson }},
+            description: {{ product["description"]|tojson }}
+          },
+        {% endfor %}
+      };
+
+      const duplicateModal = document.getElementById("duplicate-product-modal");
+      const duplicateMessage = document.getElementById("duplicate-product-message");
+      const duplicateConfirmButton = document.getElementById("duplicate-product-confirm");
+      const createForm = document.querySelector("#add-product-modal form");
+      const createArticleInput = document.getElementById("create-product-article-number");
+      const createOverwriteInput = document.getElementById("create-product-confirm-overwrite");
+      let pendingCreateSubmit = null;
+
+      if (createForm && createArticleInput && createOverwriteInput && duplicateModal && duplicateMessage && duplicateConfirmButton) {
+        const findDuplicateProduct = (articleNumber) => {
+          const normalized = articleNumber.trim().toLowerCase();
+          if (!normalized) return null;
+          return Object.values(existingProducts).find((product) => product.articleNumber.trim().toLowerCase() === normalized) || null;
+        };
+
+        createForm.addEventListener("submit", (event) => {
+          if (createOverwriteInput.value === "1") return;
+          const duplicateProduct = findDuplicateProduct(createArticleInput.value);
+          if (!duplicateProduct) return;
+
+          event.preventDefault();
+          pendingCreateSubmit = () => createForm.submit();
+          duplicateMessage.textContent = `Artikelnummer ${duplicateProduct.articleNumber} bestaat al bij ${duplicateProduct.description}.`;
+          setModalState(duplicateModal, true);
+        });
+
+        duplicateConfirmButton.addEventListener("click", () => {
+          if (!pendingCreateSubmit) return;
+          createOverwriteInput.value = "1";
+          setModalState(duplicateModal, false);
+          pendingCreateSubmit();
+          pendingCreateSubmit = null;
+        });
+
+        duplicateModal.querySelectorAll("[data-modal-close]").forEach((button) => {
+          button.addEventListener("click", () => {
+            pendingCreateSubmit = null;
+            createOverwriteInput.value = "0";
+            setModalState(duplicateModal, false);
+          });
+        });
+      }
+
       const scannerModal = document.getElementById("barcode-scanner-modal");
       const readerId = "barcode-reader";
       const status = document.getElementById("barcode-scan-status");

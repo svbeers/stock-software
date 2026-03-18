@@ -265,13 +265,46 @@
         <form method="post" action="{{ url_for('add_job_material', job_id=job['id']) }}" class="form-grid">
           <label class="full-width">
             <span>Product</span>
-            <select name="product_id" id="job-product-select" required>
-              {% for product in products %}
-                <option value="{{ product['id'] }}" data-meter-tracking="{{ product['meter_tracking_enabled'] }}" data-last-meter-end="{{ '' if product['last_meter_end'] is none else format_quantity(product['last_meter_end']) }}">
-                  {{ product["description"] }} | {{ product["article_number"] }} | stock {{ format_quantity(product["stock_quantity"]) }} {{ product["unit"] }} | buy {{ format_quantity(product["purchase_quantity"]) }} for EUR {{ "%.2f"|format(product["purchase_price"]) }} | sell EUR {{ "%.2f"|format(calculate_sale_price(product["cost"], product["profit_margin"])) }}/{{ product["unit"] }}
-                </option>
-              {% endfor %}
-            </select>
+            <input type="hidden" name="product_id" id="job-product-id">
+            <div class="product-picker">
+              <input
+                type="text"
+                id="job-product-search"
+                placeholder="Zoek op omschrijving of artikelnummer"
+                autocomplete="off"
+                data-product-search
+              >
+              <div id="job-product-selected" class="product-selection-summary muted">Nog geen product geselecteerd.</div>
+              <div id="job-product-results" class="product-search-results" hidden>
+                {% for product in products %}
+                  {% set selling_price = calculate_sale_price(product["cost"], product["profit_margin"]) %}
+                  <button
+                    class="product-search-item"
+                    type="button"
+                    data-product-item
+                    data-product-id="{{ product['id'] }}"
+                    data-product-article-number="{{ product['article_number'] }}"
+                    data-product-description="{{ product['description'] }}"
+                    data-product-unit="{{ product['unit'] }}"
+                    data-product-stock="{{ format_quantity(product['stock_quantity']) }}"
+                    data-product-purchase-quantity="{{ format_quantity(product['purchase_quantity']) }}"
+                    data-product-purchase-price="{{ '%.2f'|format(product['purchase_price']) }}"
+                    data-product-selling-price="{{ '%.2f'|format(selling_price) }}"
+                    data-product-meter-tracking="{{ product['meter_tracking_enabled'] }}"
+                    data-product-last-meter-end="{{ '' if product['last_meter_end'] is none else format_quantity(product['last_meter_end']) }}"
+                    data-product-search-text="{{ (product['article_number'] ~ ' ' ~ product['description'])|lower }}"
+                  >
+                    <span class="product-search-main">
+                      <strong>{{ product["description"] }}</strong>
+                      <small>{{ product["article_number"] }}</small>
+                    </span>
+                    <span class="product-search-meta">
+                      Stock {{ format_quantity(product["stock_quantity"]) }} {{ product["unit"] }} | koop {{ format_quantity(product["purchase_quantity"]) }} voor EUR {{ "%.2f"|format(product["purchase_price"]) }} | verkoop EUR {{ "%.2f"|format(selling_price) }}/{{ product["unit"] }}
+                    </span>
+                  </button>
+                {% endfor %}
+              </div>
+            </div>
           </label>
           <label id="quantity-label">
             <span id="quantity-label-text">Gebruikte hoeveelheid</span>
@@ -299,8 +332,11 @@
   </section>
   <script>
     (() => {
-      const select = document.getElementById("job-product-select");
-      if (select) {
+      const productSearch = document.getElementById("job-product-search");
+      const productIdInput = document.getElementById("job-product-id");
+      const productResults = document.getElementById("job-product-results");
+      const productSummary = document.getElementById("job-product-selected");
+      if (productSearch && productIdInput && productResults && productSummary) {
         const quantityLabel = document.getElementById("quantity-label");
         const quantityInput = document.getElementById("quantity-input");
         const meterStartLabel = document.getElementById("meter-start-label");
@@ -310,11 +346,13 @@
         const meterHelp = document.getElementById("meter-help");
         const meterRemark = document.getElementById("meter-remark");
         const quantityLabelText = document.getElementById("quantity-label-text");
+        const productItems = Array.from(productResults.querySelectorAll("[data-product-item]"));
+        const addMaterialForm = productSearch.closest("form");
+        let selectedItem = null;
 
         const updateMeterFields = () => {
-          const option = select.options[select.selectedIndex];
-          const usesMeterTracking = option && option.dataset.meterTracking === "1";
-          const lastMeterEnd = option ? option.dataset.lastMeterEnd : "";
+          const usesMeterTracking = selectedItem && selectedItem.dataset.productMeterTracking === "1";
+          const lastMeterEnd = selectedItem ? selectedItem.dataset.productLastMeterEnd : "";
           [meterStartLabel, meterEndLabel, meterHelp].forEach((element) => {
             if (element) element.classList.toggle("is-visible", usesMeterTracking);
           });
@@ -341,7 +379,64 @@
           }
         };
 
-        select.addEventListener("change", updateMeterFields);
+        const renderResults = () => {
+          const searchText = productSearch.value.trim().toLowerCase();
+          let visibleCount = 0;
+          productItems.forEach((item) => {
+            const haystack = item.dataset.productSearchText || "";
+            const isVisible = !searchText || haystack.includes(searchText);
+            item.hidden = !isVisible || visibleCount >= 8;
+            if (isVisible && visibleCount < 8) {
+              visibleCount += 1;
+            }
+          });
+          productResults.hidden = visibleCount === 0;
+        };
+
+        const selectProduct = (item) => {
+          selectedItem = item;
+          productIdInput.value = item.dataset.productId || "";
+          productSearch.value = item.dataset.productDescription || "";
+          productSummary.classList.remove("muted");
+          productSummary.innerHTML =
+            `<strong>${item.dataset.productDescription}</strong> (${item.dataset.productArticleNumber})<br>` +
+            `Stock ${item.dataset.productStock} ${item.dataset.productUnit} | ` +
+            `koop ${item.dataset.productPurchaseQuantity} voor EUR ${item.dataset.productPurchasePrice} | ` +
+            `verkoop EUR ${item.dataset.productSellingPrice}/${item.dataset.productUnit}`;
+          productResults.hidden = true;
+          renderResults();
+          updateMeterFields();
+        };
+
+        productSearch.addEventListener("focus", renderResults);
+        productSearch.addEventListener("input", () => {
+          selectedItem = null;
+          productIdInput.value = "";
+          productSummary.classList.add("muted");
+          productSummary.textContent = "Nog geen product geselecteerd.";
+          updateMeterFields();
+          renderResults();
+        });
+
+        productItems.forEach((item) => {
+          item.addEventListener("click", () => selectProduct(item));
+        });
+
+        document.addEventListener("click", (event) => {
+          if (!productSearch.closest(".product-picker")?.contains(event.target)) {
+            productResults.hidden = true;
+          }
+        });
+
+        if (addMaterialForm) {
+          addMaterialForm.addEventListener("submit", (event) => {
+            if (!productIdInput.value) {
+              event.preventDefault();
+              productSearch.focus();
+            }
+          });
+        }
+
         updateMeterFields();
       }
 

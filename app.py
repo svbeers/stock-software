@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import os
+import re
 import shutil
 import sqlite3
 from datetime import datetime
@@ -117,6 +118,7 @@ def init_db() -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             article_number TEXT NOT NULL,
             barcode TEXT NOT NULL DEFAULT '',
+            image_url TEXT NOT NULL DEFAULT '',
             description TEXT NOT NULL,
             unit TEXT NOT NULL,
             purchase_quantity REAL NOT NULL DEFAULT 1,
@@ -195,6 +197,7 @@ def init_db() -> None:
         """
     )
     migrate_products_table(db)
+    migrate_product_unique_index(db)
     migrate_jobs_table(db)
     migrate_job_materials_table(db)
     migrate_settings_table(db)
@@ -219,8 +222,17 @@ def get_settings() -> dict[str, str]:
 
 def save_settings(form_data: Any) -> None:
     db = get_db()
+    normalized_categories: list[str] = []
     for key, default_value in DEFAULT_SETTINGS.items():
         value = form_data.get(key, "").strip() or default_value
+        if key == "product_categories":
+            normalized_lines: list[str] = []
+            for raw_line in value.splitlines():
+                category = raw_line.strip()
+                if category and category not in normalized_lines:
+                    normalized_lines.append(category)
+            value = "\n".join(normalized_lines)
+            normalized_categories = normalized_lines
         db.execute(
             """
             INSERT INTO app_settings (key, value)
@@ -229,6 +241,14 @@ def save_settings(form_data: Any) -> None:
             """,
             (key, value),
         )
+    if normalized_categories:
+        placeholders = ",".join("?" for _ in normalized_categories)
+        db.execute(
+            f"UPDATE products SET category = '' WHERE category <> '' AND category NOT IN ({placeholders})",
+            normalized_categories,
+        )
+    else:
+        db.execute("UPDATE products SET category = '' WHERE category <> ''")
     db.commit()
 
 
@@ -293,6 +313,8 @@ def migrate_products_table(db: sqlite3.Connection) -> None:
     }
     if "barcode" not in existing_columns:
         db.execute("ALTER TABLE products ADD COLUMN barcode TEXT NOT NULL DEFAULT ''")
+    if "image_url" not in existing_columns:
+        db.execute("ALTER TABLE products ADD COLUMN image_url TEXT NOT NULL DEFAULT ''")
     if "purchase_quantity" not in existing_columns:
         db.execute(
             "ALTER TABLE products ADD COLUMN purchase_quantity REAL NOT NULL DEFAULT 1"
@@ -334,6 +356,22 @@ def migrate_products_table(db: sqlite3.Connection) -> None:
         """
     )
     db.execute("UPDATE products SET cost = ROUND(purchase_price / purchase_quantity, 4)")
+
+
+def migrate_product_unique_index(db: sqlite3.Connection) -> None:
+    duplicates = db.execute(
+        """
+        SELECT LOWER(TRIM(article_number)) AS normalized_article_number, COUNT(*) AS duplicate_count
+        FROM products
+        GROUP BY LOWER(TRIM(article_number))
+        HAVING normalized_article_number <> '' AND duplicate_count > 1
+        """
+    ).fetchall()
+    if duplicates:
+        return
+    db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_products_article_number_unique ON products(article_number COLLATE NOCASE)"
+    )
 
 
 def migrate_jobs_table(db: sqlite3.Connection) -> None:
@@ -396,20 +434,11 @@ def migrate_settings_table(db: sqlite3.Connection) -> None:
 
 def query_categories() -> list[str]:
     settings = get_settings()
-    configured_categories = [
+    return [
         line.strip()
         for line in settings.get("product_categories", "").splitlines()
         if line.strip()
     ]
-    existing_rows = get_db().execute(
-        "SELECT DISTINCT category FROM products WHERE category <> '' ORDER BY category COLLATE NOCASE"
-    ).fetchall()
-    existing_categories = [row["category"] for row in existing_rows]
-    combined_categories = configured_categories[:]
-    for category in existing_categories:
-        if category not in combined_categories:
-            combined_categories.append(category)
-    return combined_categories
 
 
 def query_recent_purchases(limit: int = 10) -> list[sqlite3.Row]:
@@ -464,6 +493,24 @@ def get_product_or_404(product_id: int) -> sqlite3.Row:
     if product is None:
         abort(404)
     return product
+
+
+def get_product_by_article_number(article_number: str, exclude_product_id: int | None = None) -> sqlite3.Row | None:
+    normalized_article_number = article_number.strip()
+    if not normalized_article_number:
+        return None
+
+    params: list[Any] = [normalized_article_number]
+    sql = """
+        SELECT *
+        FROM products
+        WHERE LOWER(TRIM(article_number)) = LOWER(TRIM(?))
+    """
+    if exclude_product_id is not None:
+        sql += " AND id <> ?"
+        params.append(exclude_product_id)
+    sql += " ORDER BY id ASC LIMIT 1"
+    return get_db().execute(sql, params).fetchone()
 
 
 def get_job_or_404(job_id: int) -> sqlite3.Row:
@@ -665,9 +712,118 @@ def parse_decimal(value: str, field_name: str) -> float:
         raise ValueError(f"Ongeldig getal voor {field_name}: {value}") from exc
 
 
+def parse_product_form(form: Any) -> dict[str, Any]:
+    article_number = form.get("article_number", "").strip()
+    description = form.get("description", "").strip()
+    unit = form.get("unit", "").strip()
+    if not article_number:
+        raise ValueError("Artikelnummer is verplicht.")
+    if not description:
+        raise ValueError("Omschrijving is verplicht.")
+    if not unit:
+        raise ValueError("Verkoopeenheid is verplicht.")
+
+    purchase_quantity = float(form.get("purchase_quantity", 1) or 1)
+    purchase_price = float(form.get("purchase_price", 0) or 0)
+    stock_quantity = float(form.get("stock_quantity", 0) or 0)
+    profit_margin = float(form.get("profit_margin", 0) or 0)
+    if purchase_quantity <= 0:
+        raise ValueError("Aantal per aankoop moet groter zijn dan nul.")
+    if purchase_price < 0:
+        raise ValueError("Aankoopprijs mag niet negatief zijn.")
+    if stock_quantity < 0:
+        raise ValueError("Voorraad mag niet negatief zijn.")
+    if profit_margin < 0:
+        raise ValueError("Winstmarge mag niet negatief zijn.")
+
+    return {
+        "article_number": article_number,
+        "barcode": form.get("barcode", "").strip(),
+        "image_url": form.get("image_url", "").strip(),
+        "description": description,
+        "unit": unit,
+        "purchase_quantity": purchase_quantity,
+        "purchase_price": purchase_price,
+        "stock_quantity": stock_quantity,
+        "cost": calculate_unit_cost(purchase_price, purchase_quantity),
+        "profit_margin": profit_margin,
+        "meter_tracking_enabled": 1 if form.get("meter_tracking_enabled") == "on" else 0,
+        "category": normalize_category_value(form.get("category", "")),
+    }
+
+
+def save_product_record(product_data: dict[str, Any], product_id: int | None = None) -> int:
+    db = get_db()
+    if product_id is None:
+        cursor = db.execute(
+            """
+            INSERT INTO products (
+                article_number,
+                barcode,
+                image_url,
+                description,
+                unit,
+                purchase_quantity,
+                purchase_price,
+                stock_quantity,
+                cost,
+                profit_margin,
+                meter_tracking_enabled,
+                category
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                product_data["article_number"],
+                product_data["barcode"],
+                product_data["image_url"],
+                product_data["description"],
+                product_data["unit"],
+                product_data["purchase_quantity"],
+                product_data["purchase_price"],
+                product_data["stock_quantity"],
+                product_data["cost"],
+                product_data["profit_margin"],
+                product_data["meter_tracking_enabled"],
+                product_data["category"],
+            ),
+        )
+        new_product_id = int(cursor.lastrowid)
+        if product_data["stock_quantity"] > 0:
+            create_stock_batch(db, new_product_id, product_data["stock_quantity"], product_data["cost"], "opening")
+            refresh_product_stock_state(db, new_product_id)
+        return new_product_id
+
+    db.execute(
+        """
+        UPDATE products
+        SET article_number = ?, barcode = ?, image_url = ?, description = ?, unit = ?, purchase_quantity = ?, purchase_price = ?,
+            stock_quantity = ?, cost = ?, profit_margin = ?, meter_tracking_enabled = ?, category = ?
+        WHERE id = ?
+        """,
+        (
+            product_data["article_number"],
+            product_data["barcode"],
+            product_data["image_url"],
+            product_data["description"],
+            product_data["unit"],
+            product_data["purchase_quantity"],
+            product_data["purchase_price"],
+            product_data["stock_quantity"],
+            product_data["cost"],
+            product_data["profit_margin"],
+            product_data["meter_tracking_enabled"],
+            product_data["category"],
+            product_id,
+        ),
+    )
+    sync_product_stock_level(db, product_id, product_data["stock_quantity"], product_data["cost"])
+    return product_id
+
+
 def normalize_product_payload(raw_row: dict[str, str]) -> dict[str, Any]:
     row = {key.strip(): (value or "").strip() for key, value in raw_row.items() if key}
-    required_text_fields = ["article_number", "description", "unit", "category"]
+    required_text_fields = ["article_number", "description", "unit"]
     for field_name in required_text_fields:
         if not row.get(field_name):
             raise ValueError(f"Ontbrekende waarde voor {field_name}.")
@@ -698,6 +854,7 @@ def normalize_product_payload(raw_row: dict[str, str]) -> dict[str, Any]:
     return {
         "article_number": row["article_number"],
         "barcode": row.get("barcode", "").strip(),
+        "image_url": row.get("image_url", "").strip(),
         "description": row["description"],
         "unit": row["unit"],
         "purchase_quantity": purchase_quantity,
@@ -706,8 +863,215 @@ def normalize_product_payload(raw_row: dict[str, str]) -> dict[str, Any]:
         "cost": calculate_unit_cost(purchase_price, purchase_quantity),
         "profit_margin": profit_margin,
         "meter_tracking_enabled": 1 if meter_tracking_enabled else 0,
-        "category": row["category"],
+        "category": normalize_category_value(row.get("category", "")),
     }
+
+
+def normalize_unit_label(unit: str) -> str:
+    normalized = unit.strip().lower()
+    unit_map = {
+        "st": "st",
+        "stuk": "st",
+        "stukken": "st",
+        "m": "m",
+        "meter": "m",
+        "meters": "m",
+    }
+    return unit_map.get(normalized, normalized or "st")
+
+
+def parse_spreadsheet_decimal(value: Any, field_name: str) -> float:
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    normalized = str(value or "").strip()
+    if not normalized:
+        raise ValueError(f"Ontbrekende waarde voor {field_name}.")
+
+    normalized = normalized.replace("\xa0", "").replace("€", "").replace(" ", "")
+    if re.fullmatch(r"-?\d{1,3}(,\d{3})+", normalized):
+        normalized = normalized.replace(",", "")
+    elif "," in normalized and "." in normalized:
+        normalized = normalized.replace(".", "").replace(",", ".")
+    else:
+        normalized = normalized.replace(",", ".")
+    normalized = normalized.replace("-.", "-0.")
+
+    try:
+        return float(normalized)
+    except ValueError as exc:
+        raise ValueError(f"Ongeldig getal voor {field_name}: {value}") from exc
+
+
+def get_default_import_category() -> str:
+    return ""
+
+
+def normalize_category_value(category: str) -> str:
+    normalized_category = category.strip()
+    if not normalized_category:
+        return ""
+    return normalized_category if normalized_category in query_categories() else ""
+
+
+def find_excel_header_row(rows: list[list[Any]], required_headers: set[str]) -> tuple[int, dict[str, int]]:
+    for row_index, row in enumerate(rows):
+        header_map: dict[str, int] = {}
+        for column_index, cell in enumerate(row):
+            header = str(cell or "").strip().lower()
+            if header:
+                header_map[header] = column_index
+        if required_headers.issubset(header_map.keys()):
+            return row_index, header_map
+    raise ValueError(
+        "De Excel-import verwacht kolommen met minstens: Artikel, Omschrijving, Netto Prijs, Per, Aantal en Totaal."
+    )
+
+
+def load_excel_rows(raw_bytes: bytes, filename: str) -> list[list[Any]]:
+    suffix = Path(filename).suffix.lower()
+    if suffix == ".xls":
+        try:
+            import xlrd  # type: ignore[import-not-found]
+        except ImportError as exc:
+            raise ValueError("Excel-import is nog niet beschikbaar omdat het pakket xlrd ontbreekt.") from exc
+
+        workbook = xlrd.open_workbook(file_contents=raw_bytes)
+        if workbook.nsheets == 0:
+            raise ValueError("Het gekozen Excel-bestand bevat geen werkblad.")
+        sheet = workbook.sheet_by_index(0)
+        return [sheet.row_values(row_index) for row_index in range(sheet.nrows)]
+
+    if suffix == ".xlsx":
+        try:
+            from openpyxl import load_workbook  # type: ignore[import-not-found]
+        except ImportError as exc:
+            raise ValueError("Excel-import is nog niet beschikbaar omdat het pakket openpyxl ontbreekt.") from exc
+
+        workbook = load_workbook(io.BytesIO(raw_bytes), data_only=True, read_only=True)
+        sheet = workbook.worksheets[0]
+        return [list(row) for row in sheet.iter_rows(values_only=True)]
+
+    raise ValueError("Excel-import ondersteunt enkel .xls en .xlsx bestanden.")
+
+
+def load_supplier_excel_products(file_storage: Any) -> list[dict[str, Any]]:
+    if not file_storage or not file_storage.filename:
+        raise ValueError("Kies eerst een Excel-bestand.")
+
+    raw_bytes = file_storage.stream.read()
+    if not raw_bytes:
+        raise ValueError("Het gekozen Excel-bestand is leeg.")
+
+    rows = load_excel_rows(raw_bytes, file_storage.filename)
+    required_headers = {"artikel", "omschrijving", "netto prijs", "per", "aantal", "totaal"}
+    header_row_index, header_map = find_excel_header_row(rows, required_headers)
+    default_category = get_default_import_category()
+    products: list[dict[str, Any]] = []
+
+    for line_number, row in enumerate(rows[header_row_index + 1 :], start=header_row_index + 2):
+        article_number = str(row[header_map["artikel"]] or "").strip()
+        description = str(row[header_map["omschrijving"]] or "").strip()
+        if not article_number and not description:
+            continue
+        if not article_number:
+            continue
+        if not description:
+            raise ValueError(f"Rij {line_number}: ontbrekende omschrijving voor artikel {article_number}.")
+
+        purchase_quantity = parse_spreadsheet_decimal(row[header_map["aantal"]], "aantal")
+        if purchase_quantity <= 0:
+            raise ValueError(f"Rij {line_number}: aantal moet groter zijn dan nul.")
+
+        total_purchase_price = parse_spreadsheet_decimal(row[header_map["totaal"]], "totaal")
+        if total_purchase_price <= 0:
+            continue
+
+        unit_raw = str(row[header_map["per"]] or "").strip()
+        unit = normalize_unit_label(unit_raw)
+
+        products.append(
+            {
+                "article_number": article_number,
+                "description": description,
+                "unit": unit,
+                "purchase_quantity": purchase_quantity,
+                "purchase_price": total_purchase_price,
+                "cost": calculate_unit_cost(total_purchase_price, purchase_quantity),
+                "category": default_category,
+            }
+        )
+
+    if not products:
+        raise ValueError("Geen bruikbare productregels gevonden in het Excel-bestand.")
+    return products
+
+
+def import_supplier_excel(file_storage: Any) -> tuple[int, int]:
+    products = load_supplier_excel_products(file_storage)
+    db = get_db()
+    inserted_count = 0
+    updated_count = 0
+
+    for product in products:
+        existing = db.execute(
+            "SELECT id, profit_margin, meter_tracking_enabled, category, barcode FROM products WHERE article_number = ?",
+            (product["article_number"],),
+        ).fetchone()
+
+        if existing:
+            db.execute(
+                """
+                UPDATE products
+                SET description = ?, unit = ?, purchase_quantity = ?, purchase_price = ?
+                WHERE id = ?
+                """,
+                (
+                    product["description"],
+                    product["unit"],
+                    product["purchase_quantity"],
+                    product["purchase_price"],
+                    existing["id"],
+                ),
+            )
+            refresh_product_stock_state(db, int(existing["id"]))
+            updated_count += 1
+        else:
+            db.execute(
+                """
+                INSERT INTO products (
+                    article_number,
+                    barcode,
+                    description,
+                    unit,
+                    purchase_quantity,
+                    purchase_price,
+                    stock_quantity,
+                    cost,
+                    profit_margin,
+                    meter_tracking_enabled,
+                    category
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    product["article_number"],
+                    "",
+                    product["description"],
+                    product["unit"],
+                    product["purchase_quantity"],
+                    product["purchase_price"],
+                    0,
+                    product["cost"],
+                    0,
+                    0,
+                    product["category"],
+                ),
+            )
+            inserted_count += 1
+
+    db.commit()
+    return inserted_count, updated_count
 
 
 def import_products_from_csv(file_storage: Any) -> tuple[int, int]:
@@ -741,6 +1105,7 @@ def import_products_from_csv(file_storage: Any) -> tuple[int, int]:
     missing_headers = sorted(expected_headers - headers)
     if missing_headers:
         raise ValueError(f"Ontbrekende CSV-kolommen: {', '.join(missing_headers)}")
+    should_update_image_url = "image_url" in headers
 
     db = get_db()
     inserted_count = 0
@@ -757,20 +1122,22 @@ def import_products_from_csv(file_storage: Any) -> tuple[int, int]:
             raise ValueError(f"Line {line_number}: {exc}") from exc
 
         existing = db.execute(
-            "SELECT id FROM products WHERE article_number = ?",
+            "SELECT id, image_url FROM products WHERE article_number = ?",
             (product["article_number"],),
         ).fetchone()
 
         if existing:
+            image_url = product["image_url"] if should_update_image_url else existing["image_url"]
             db.execute(
                 """
                 UPDATE products
-                SET barcode = ?, description = ?, unit = ?, purchase_quantity = ?, purchase_price = ?,
+                SET barcode = ?, image_url = ?, description = ?, unit = ?, purchase_quantity = ?, purchase_price = ?,
                     profit_margin = ?, meter_tracking_enabled = ?, category = ?
                 WHERE id = ?
                 """,
                 (
                     product["barcode"],
+                    image_url,
                     product["description"],
                     product["unit"],
                     product["purchase_quantity"],
@@ -794,6 +1161,7 @@ def import_products_from_csv(file_storage: Any) -> tuple[int, int]:
                 INSERT INTO products (
                     article_number,
                     barcode,
+                    image_url,
                     description,
                     unit,
                     purchase_quantity,
@@ -809,6 +1177,7 @@ def import_products_from_csv(file_storage: Any) -> tuple[int, int]:
                 (
                     product["article_number"],
                     product["barcode"],
+                    product["image_url"],
                     product["description"],
                     product["unit"],
                     product["purchase_quantity"],
@@ -936,12 +1305,32 @@ def products() -> str:
         SELECT *
         FROM products
         {where_sql}
-        ORDER BY {sort_column} {sort_direction}, id DESC
+        ORDER BY
+            CASE WHEN TRIM(category) = '' THEN 1 ELSE 0 END ASC,
+            category COLLATE NOCASE ASC,
+            {sort_column} {sort_direction},
+            id DESC
     """
     rows = get_db().execute(sql, params).fetchall()
+    grouped_products: list[tuple[str, list[sqlite3.Row]]] = []
+    current_group_label = None
+    current_group_rows: list[sqlite3.Row] = []
+    for row in rows:
+        group_label = row["category"].strip() or "Zonder categorie"
+        if current_group_label != group_label:
+            if current_group_rows:
+                grouped_products.append((current_group_label, current_group_rows))
+            current_group_label = group_label
+            current_group_rows = [row]
+        else:
+            current_group_rows.append(row)
+    if current_group_rows:
+        grouped_products.append((current_group_label, current_group_rows))
+
     return render_template(
         "products.html",
         products=rows,
+        grouped_products=grouped_products,
         categories=query_categories(),
         selected_sort=sort,
         selected_direction=direction,
@@ -994,105 +1383,71 @@ def reset_database() -> Response:
 
 @app.post("/products")
 def create_product() -> Response:
-    form = request.form
-    purchase_quantity = float(form.get("purchase_quantity", 1) or 1)
-    purchase_price = float(form.get("purchase_price", 0) or 0)
-    stock_quantity = float(form.get("stock_quantity", 0) or 0)
-    meter_tracking_enabled = 1 if form.get("meter_tracking_enabled") == "on" else 0
-    unit_cost = calculate_unit_cost(purchase_price, purchase_quantity)
-    db = get_db()
-    cursor = db.execute(
-        """
-        INSERT INTO products (
-            article_number,
-            barcode,
-            description,
-            unit,
-            purchase_quantity,
-            purchase_price,
-            stock_quantity,
-            cost,
-            profit_margin,
-            meter_tracking_enabled,
-            category
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            form.get("article_number", "").strip(),
-            form.get("barcode", "").strip(),
-            form.get("description", "").strip(),
-            form.get("unit", "").strip(),
-            purchase_quantity,
-            purchase_price,
-            stock_quantity,
-            unit_cost,
-            float(form.get("profit_margin", 0) or 0),
-            meter_tracking_enabled,
-            form.get("category", "").strip(),
-        ),
-    )
-    product_id = int(cursor.lastrowid)
-    if stock_quantity > 0:
-        create_stock_batch(db, product_id, stock_quantity, unit_cost, "opening")
-        refresh_product_stock_state(db, product_id)
-    db.commit()
+    try:
+        product_data = parse_product_form(request.form)
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("products"))
+
+    duplicate_product = get_product_by_article_number(product_data["article_number"])
+    if duplicate_product is not None and request.form.get("confirm_overwrite") != "1":
+        flash("Dit artikelnummer bestaat al. Kies overschrijven of annuleer.", "error")
+        return redirect(url_for("products"))
+
+    save_product_record(product_data, int(duplicate_product["id"])) if duplicate_product is not None else save_product_record(product_data)
+    get_db().commit()
+    if duplicate_product is not None:
+        flash("Bestaand product overschreven.", "success")
+    else:
+        flash("Product toegevoegd.", "success")
     return redirect(url_for("products"))
 
 
 @app.post("/products/import")
 def import_products() -> Response:
+    import_file = request.files.get("csv_file")
+    filename = (import_file.filename or "").lower() if import_file else ""
     try:
-        inserted_count, updated_count = import_products_from_csv(request.files.get("csv_file"))
+        if filename.endswith(".csv"):
+            inserted_count, updated_count = import_products_from_csv(import_file)
+            success_message = (
+                f"CSV-import voltooid. {inserted_count} producten toegevoegd en {updated_count} producten bijgewerkt."
+            )
+        elif filename.endswith(".xls") or filename.endswith(".xlsx"):
+            inserted_count, updated_count = import_supplier_excel(import_file)
+            success_message = (
+                f"Excel-import voltooid. {inserted_count} producten toegevoegd en {updated_count} producten bijgewerkt."
+            )
+        else:
+            raise ValueError("Kies een .csv, .xls of .xlsx bestand.")
     except UnicodeDecodeError:
         flash("CSV-import mislukt: bestand moet UTF-8 gecodeerd zijn.", "error")
         return redirect(url_for("products"))
     except ValueError as exc:
-        flash(f"CSV-import mislukt: {exc}", "error")
+        flash(f"Import mislukt: {exc}", "error")
         return redirect(url_for("products"))
 
-    flash(
-        f"CSV-import voltooid. {inserted_count} producten toegevoegd en {updated_count} producten bijgewerkt.",
-        "success",
-    )
+    flash(success_message, "success")
     return redirect(url_for("products"))
 
 
 @app.post("/products/<int:product_id>/update")
 def update_product(product_id: int) -> Response:
-    existing_product = get_product_or_404(product_id)
-    form = request.form
-    purchase_quantity = float(form.get("purchase_quantity", 1) or 1)
-    purchase_price = float(form.get("purchase_price", 0) or 0)
-    target_stock_quantity = float(form.get("stock_quantity", 0) or 0)
-    meter_tracking_enabled = 1 if form.get("meter_tracking_enabled") == "on" else 0
-    unit_cost = calculate_unit_cost(purchase_price, purchase_quantity)
-    db = get_db()
-    db.execute(
-        """
-        UPDATE products
-        SET article_number = ?, barcode = ?, description = ?, unit = ?, purchase_quantity = ?, purchase_price = ?,
-            stock_quantity = ?,
-            cost = ?, profit_margin = ?, meter_tracking_enabled = ?, category = ?
-        WHERE id = ?
-        """,
-        (
-            form.get("article_number", "").strip(),
-            form.get("barcode", "").strip(),
-            form.get("description", "").strip(),
-            form.get("unit", "").strip(),
-            purchase_quantity,
-            purchase_price,
-            existing_product["stock_quantity"],
-            existing_product["cost"],
-            float(form.get("profit_margin", 0) or 0),
-            meter_tracking_enabled,
-            form.get("category", "").strip(),
-            product_id,
-        ),
-    )
-    sync_product_stock_level(db, product_id, target_stock_quantity, unit_cost)
-    db.commit()
+    get_product_or_404(product_id)
+    try:
+        product_data = parse_product_form(request.form)
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("products"))
+
+    duplicate_product = get_product_by_article_number(product_data["article_number"], exclude_product_id=product_id)
+    if duplicate_product is not None:
+        flash("Dit artikelnummer bestaat al bij een ander product. Bewerk dat product of gebruik een ander artikelnummer.", "error")
+        return redirect(url_for("products"))
+
+    save_product_record(product_data, product_id)
+    get_db().commit()
+    flash("Product bijgewerkt.", "success")
     return redirect(url_for("products"))
 
 
