@@ -66,12 +66,18 @@
     </article>
   </section>
 
+  {% set uninvoiced_materials = materials|selectattr("is_invoiced", "equalto", 0)|list %}
   <section class="card">
     <div class="toolbar">
       <div class="section-title no-space">
         <h2>Gebruikte materialen</h2>
       </div>
-      <button class="button" type="button" data-modal-open="#add-material-modal">Materiaal toevoegen</button>
+      <div class="button-row">
+        {% if uninvoiced_materials %}
+          <button class="button secondary" type="button" data-modal-open="#bulk-invoice-modal">Factuur koppelen</button>
+        {% endif %}
+        <button class="button" type="button" data-modal-open="#add-material-modal">Materiaal toevoegen</button>
+      </div>
     </div>
     {% if materials %}
       <div class="table-wrap">
@@ -169,6 +175,52 @@
       <p class="muted">Nog geen materialen toegevoegd aan deze werf.</p>
     {% endif %}
   </section>
+
+  {% if uninvoiced_materials %}
+    <section id="bulk-invoice-modal" class="modal-shell" aria-hidden="true">
+      <div class="modal-backdrop" data-modal-close></div>
+      <div class="modal-card">
+        <div class="toolbar modal-toolbar">
+          <div class="section-title no-space">
+            <h2>Materialen aan factuur koppelen</h2>
+            <p class="muted">Selecteer de regels die op dezelfde factuur horen.</p>
+          </div>
+          <button class="button secondary small" type="button" data-modal-close>Sluiten</button>
+        </div>
+        <form method="post" action="{{ url_for('bulk_invoice_job_materials', job_id=job['id']) }}" class="form-grid">
+          <label class="full-width">
+            <span>Factuurnummer</span>
+            <input type="text" name="invoice_number" placeholder="Bijvoorbeeld 2026-014" required>
+          </label>
+          <div class="full-width">
+            <span class="field-label">Selecteer materiaalregels</span>
+            <div class="bulk-selection-list">
+              {% for material in uninvoiced_materials %}
+                {% set unit_selling = calculate_sale_price(material["unit_cost_snapshot"], material["profit_margin_snapshot"]) %}
+                <label class="bulk-selection-item">
+                  <input type="checkbox" name="material_ids" value="{{ material['id'] }}">
+                  <span>
+                    <strong>{{ material["description_snapshot"] }}</strong>
+                    <small>
+                      {{ format_quantity(material["quantity"]) }} {{ material["unit_snapshot"] }} ·
+                      EUR {{ "%.2f"|format(material["quantity"] * unit_selling) }}
+                      {% if material["meter_start_snapshot"] is not none and material["meter_end_snapshot"] is not none %}
+                        · Kabel {{ format_quantity(material["meter_start_snapshot"]) }} tot {{ format_quantity(material["meter_end_snapshot"]) }}
+                      {% endif %}
+                    </small>
+                  </span>
+                </label>
+              {% endfor %}
+            </div>
+          </div>
+          <div class="modal-footer">
+            <span class="muted">{{ uninvoiced_materials|length }} nog niet gefactureerde regels beschikbaar</span>
+            <button class="button" type="submit">Aan factuur koppelen</button>
+          </div>
+        </form>
+      </div>
+    </section>
+  {% endif %}
 
   <section id="edit-job-modal" class="modal-shell" aria-hidden="true">
     <div class="modal-backdrop" data-modal-close></div>
@@ -319,6 +371,12 @@
           invoiceToggle.addEventListener("change", updateInvoiceField);
           updateInvoiceField();
         }
+      });
+
+      document.querySelectorAll(".bulk-selection-item input[type='checkbox']").forEach((checkbox) => {
+        checkbox.addEventListener("change", () => {
+          checkbox.closest(".bulk-selection-item")?.classList.toggle("is-selected", checkbox.checked);
+        });
       });
     })();
   </script>

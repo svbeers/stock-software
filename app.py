@@ -1514,6 +1514,60 @@ def toggle_job_material_invoiced(job_id: int, material_id: int) -> Response:
     return redirect(url_for("job_detail", job_id=job_id))
 
 
+@app.post("/jobs/<int:job_id>/materials/bulk-invoice")
+def bulk_invoice_job_materials(job_id: int) -> Response:
+    get_job_or_404(job_id)
+    invoice_number = request.form.get("invoice_number", "").strip()
+    selected_material_ids: list[int] = []
+
+    for raw_id in request.form.getlist("material_ids"):
+        try:
+            selected_material_ids.append(int(raw_id))
+        except ValueError:
+            continue
+
+    if not invoice_number:
+        flash("Vul een factuurnummer in.", "error")
+        return redirect(url_for("job_detail", job_id=job_id))
+
+    if not selected_material_ids:
+        flash("Selecteer minstens een materiaalregel om aan de factuur te koppelen.", "error")
+        return redirect(url_for("job_detail", job_id=job_id))
+
+    placeholders = ",".join("?" for _ in selected_material_ids)
+    db = get_db()
+    matching_materials = db.execute(
+        f"""
+        SELECT id
+        FROM job_materials
+        WHERE job_id = ?
+            AND is_invoiced = 0
+            AND id IN ({placeholders})
+        """,
+        [job_id, *selected_material_ids],
+    ).fetchall()
+
+    if not matching_materials:
+        flash("Geen geldige niet-gefactureerde materiaalregels geselecteerd.", "error")
+        return redirect(url_for("job_detail", job_id=job_id))
+
+    valid_material_ids = [row["id"] for row in matching_materials]
+    valid_placeholders = ",".join("?" for _ in valid_material_ids)
+    db.execute(
+        f"""
+        UPDATE job_materials
+        SET is_invoiced = 1,
+            invoice_number = ?
+        WHERE job_id = ?
+            AND id IN ({valid_placeholders})
+        """,
+        [invoice_number, job_id, *valid_material_ids],
+    )
+    db.commit()
+    flash(f"{len(valid_material_ids)} materiaalregels gekoppeld aan factuur {invoice_number}.", "success")
+    return redirect(url_for("job_detail", job_id=job_id))
+
+
 @app.post("/jobs/<int:job_id>/materials/<int:material_id>/update")
 def update_job_material(job_id: int, material_id: int) -> Response:
     get_job_or_404(job_id)
