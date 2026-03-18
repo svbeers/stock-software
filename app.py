@@ -231,7 +231,7 @@ def save_settings(form_data: Any) -> None:
 
 def create_database_backup() -> Path:
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S_%f")
     backup_path = BACKUP_DIR / f"stock_manager_backup_{timestamp}.db"
     if "db" in g:
         g.db.commit()
@@ -240,6 +240,33 @@ def create_database_backup() -> Path:
     else:
         sqlite3.connect(backup_path).close()
     return backup_path
+
+
+def get_backup_path_or_404(backup_name: str) -> Path:
+    backup_path = (BACKUP_DIR / backup_name).resolve()
+    allowed_root = BACKUP_DIR.resolve()
+    if allowed_root not in backup_path.parents:
+        abort(404)
+    if not backup_path.exists() or backup_path.suffix != ".db":
+        abort(404)
+    return backup_path
+
+
+def restore_database_backup(backup_name: str) -> Path:
+    backup_path = get_backup_path_or_404(backup_name)
+    safety_backup = create_database_backup()
+    db = g.pop("db", None)
+    if db is not None:
+        db.commit()
+        db.close()
+    source_db = sqlite3.connect(backup_path)
+    target_db = sqlite3.connect(DATABASE_PATH)
+    try:
+        source_db.backup(target_db)
+    finally:
+        target_db.close()
+        source_db.close()
+    return safety_backup
 
 
 def reset_database_data() -> None:
@@ -919,6 +946,16 @@ def stock() -> Response:
 def backup_database() -> Response:
     backup_path = create_database_backup()
     flash(f"Back-up aangemaakt: {backup_path.name}", "success")
+    return redirect(url_for("settings"))
+
+
+@app.post("/backups/<path:backup_name>/restore")
+def restore_backup_database(backup_name: str) -> Response:
+    safety_backup = restore_database_backup(backup_name)
+    flash(
+        f"Back-up teruggezet: {backup_name}. Voor de zekerheid werd eerst een extra back-up gemaakt: {safety_backup.name}.",
+        "success",
+    )
     return redirect(url_for("settings"))
 
 

@@ -94,15 +94,51 @@
       </form>
     </div>
     {% if backup_files %}
-      <ul class="simple-list">
-        {% for backup in backup_files %}
-          <li>{{ backup.name }}</li>
-        {% endfor %}
-      </ul>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Bestand</th>
+              <th>Actie</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for backup in backup_files %}
+              <tr>
+                <td>{{ backup.name }}</td>
+                <td class="compact-action-cell">
+                  <button class="button secondary small" type="button" data-modal-open="#restore-backup-{{ loop.index }}">Terugzetten</button>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     {% else %}
       <p class="muted">Nog geen back-ups aangemaakt.</p>
     {% endif %}
   </section>
+
+  {% for backup in backup_files %}
+    <section id="restore-backup-{{ loop.index }}" class="modal-shell" aria-hidden="true">
+      <div class="modal-backdrop" data-modal-close></div>
+      <div class="modal-card modal-card-narrow">
+        <div class="toolbar modal-toolbar">
+          <div class="section-title no-space">
+            <h2>Back-up terugzetten</h2>
+          </div>
+          <button class="button secondary small" type="button" data-modal-close>Sluiten</button>
+        </div>
+        <p>Je staat op het punt deze back-up terug te zetten:</p>
+        <p><strong>{{ backup.name }}</strong></p>
+        <p class="muted">De huidige database wordt vervangen. Deze actie kan bestaande gegevens overschrijven. Er wordt automatisch eerst nog een extra veiligheidsback-up gemaakt.</p>
+        <form method="post" action="{{ url_for('restore_backup_database', backup_name=backup.name) }}" class="modal-footer">
+          <span></span>
+          <button class="button danger" type="submit">Back-up terugzetten</button>
+        </form>
+      </div>
+    </section>
+  {% endfor %}
 
   <section class="card danger-zone">
     <div class="toolbar">
