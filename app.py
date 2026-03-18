@@ -32,6 +32,7 @@ DEFAULT_SETTINGS = {
     "business_name": "Werkvoorraad",
     "business_tagline": "Industriel voorraadbeheer voor elektrische werken",
     "article_number_label": "Artikelnummer",
+    "barcode_label": "Barcode",
     "description_label": "Omschrijving",
     "unit_label": "Verkoopeenheid",
     "purchase_quantity_label": "Aantal per aankoop",
@@ -46,6 +47,7 @@ LEGACY_DEFAULT_SETTINGS = {
     "business_name": "Workshop Stock",
     "business_tagline": "Industrial stock control for electrician jobs",
     "article_number_label": "Article number",
+    "barcode_label": "Barcode",
     "description_label": "Description",
     "unit_label": "Unit you sell",
     "purchase_quantity_label": "Units in one purchase",
@@ -114,6 +116,7 @@ def init_db() -> None:
         CREATE TABLE IF NOT EXISTS products (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             article_number TEXT NOT NULL,
+            barcode TEXT NOT NULL DEFAULT '',
             description TEXT NOT NULL,
             unit TEXT NOT NULL,
             purchase_quantity REAL NOT NULL DEFAULT 1,
@@ -288,6 +291,8 @@ def migrate_products_table(db: sqlite3.Connection) -> None:
     existing_columns = {
         row[1] for row in db.execute("PRAGMA table_info(products)").fetchall()
     }
+    if "barcode" not in existing_columns:
+        db.execute("ALTER TABLE products ADD COLUMN barcode TEXT NOT NULL DEFAULT ''")
     if "purchase_quantity" not in existing_columns:
         db.execute(
             "ALTER TABLE products ADD COLUMN purchase_quantity REAL NOT NULL DEFAULT 1"
@@ -310,6 +315,10 @@ def migrate_products_table(db: sqlite3.Connection) -> None:
         """
         UPDATE products
         SET
+            barcode = CASE
+                WHEN barcode IS NULL THEN ''
+                ELSE TRIM(barcode)
+            END,
             purchase_quantity = CASE
                 WHEN purchase_quantity IS NULL OR purchase_quantity <= 0 THEN 1
                 ELSE purchase_quantity
@@ -688,6 +697,7 @@ def normalize_product_payload(raw_row: dict[str, str]) -> dict[str, Any]:
 
     return {
         "article_number": row["article_number"],
+        "barcode": row.get("barcode", "").strip(),
         "description": row["description"],
         "unit": row["unit"],
         "purchase_quantity": purchase_quantity,
@@ -755,11 +765,12 @@ def import_products_from_csv(file_storage: Any) -> tuple[int, int]:
             db.execute(
                 """
                 UPDATE products
-                SET description = ?, unit = ?, purchase_quantity = ?, purchase_price = ?,
+                SET barcode = ?, description = ?, unit = ?, purchase_quantity = ?, purchase_price = ?,
                     profit_margin = ?, meter_tracking_enabled = ?, category = ?
                 WHERE id = ?
                 """,
                 (
+                    product["barcode"],
                     product["description"],
                     product["unit"],
                     product["purchase_quantity"],
@@ -782,6 +793,7 @@ def import_products_from_csv(file_storage: Any) -> tuple[int, int]:
                 """
                 INSERT INTO products (
                     article_number,
+                    barcode,
                     description,
                     unit,
                     purchase_quantity,
@@ -792,10 +804,11 @@ def import_products_from_csv(file_storage: Any) -> tuple[int, int]:
                     meter_tracking_enabled,
                     category
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     product["article_number"],
+                    product["barcode"],
                     product["description"],
                     product["unit"],
                     product["purchase_quantity"],
@@ -911,9 +924,9 @@ def products() -> str:
     conditions: list[str] = []
     params: list[Any] = []
     if search:
-        conditions.append("(article_number LIKE ? OR description LIKE ? OR category LIKE ?)")
+        conditions.append("(article_number LIKE ? OR barcode LIKE ? OR description LIKE ? OR category LIKE ?)")
         pattern = f"%{search}%"
-        params.extend([pattern, pattern, pattern])
+        params.extend([pattern, pattern, pattern, pattern])
     if category:
         conditions.append("category = ?")
         params.append(category)
@@ -992,6 +1005,7 @@ def create_product() -> Response:
         """
         INSERT INTO products (
             article_number,
+            barcode,
             description,
             unit,
             purchase_quantity,
@@ -1002,10 +1016,11 @@ def create_product() -> Response:
             meter_tracking_enabled,
             category
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             form.get("article_number", "").strip(),
+            form.get("barcode", "").strip(),
             form.get("description", "").strip(),
             form.get("unit", "").strip(),
             purchase_quantity,
@@ -1056,13 +1071,14 @@ def update_product(product_id: int) -> Response:
     db.execute(
         """
         UPDATE products
-        SET article_number = ?, description = ?, unit = ?, purchase_quantity = ?, purchase_price = ?,
+        SET article_number = ?, barcode = ?, description = ?, unit = ?, purchase_quantity = ?, purchase_price = ?,
             stock_quantity = ?,
             cost = ?, profit_margin = ?, meter_tracking_enabled = ?, category = ?
         WHERE id = ?
         """,
         (
             form.get("article_number", "").strip(),
+            form.get("barcode", "").strip(),
             form.get("description", "").strip(),
             form.get("unit", "").strip(),
             purchase_quantity,
@@ -1676,7 +1692,7 @@ init_db()
 
 if __name__ == "__main__":
     app.run(
-        host=os.environ.get("FLASK_HOST", "127.0.0.1"),
+        host=os.environ.get("FLASK_HOST", "0.0.0.0"),
         port=int(os.environ.get("PORT", "5000")),
         debug=os.environ.get("FLASK_DEBUG", "0") == "1",
     )

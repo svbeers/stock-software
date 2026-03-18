@@ -319,6 +319,26 @@ h3 {
   width: auto;
 }
 
+.field-action-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.scanner-shell {
+  display: grid;
+  gap: 1rem;
+}
+
+.scanner-video {
+  width: 100%;
+  min-height: 240px;
+  background: #0b0f12;
+  border: 1px solid var(--line);
+  object-fit: cover;
+}
+
 .stock-search-card {
   margin-bottom: 1.5rem;
 }

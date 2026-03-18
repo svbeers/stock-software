@@ -9,11 +9,12 @@
         <h1>Producten</h1>
       </div>
       <form method="get" class="search-form">
-        <input type="text" name="search" value="{{ selected_search }}" placeholder="Zoek producten">
+        <input type="text" name="search" id="product-search-input" value="{{ selected_search }}" placeholder="Zoek producten of barcode">
         <input type="hidden" name="sort" value="{{ selected_sort }}">
         <input type="hidden" name="direction" value="{{ selected_direction }}">
         <input type="hidden" name="category" value="{{ selected_category }}">
         <button class="button secondary small" type="submit">Zoeken</button>
+        <button class="button secondary small" type="button" data-barcode-scan-mode="search" data-barcode-target="#product-search-input">Scan barcode</button>
       </form>
       <div class="button-row">
         <button class="button small" type="button" data-modal-open="#add-product-modal">Product toevoegen</button>
@@ -74,6 +75,13 @@
               <label>
                 <span>{{ ui_settings.article_number_label }}</span>
                 <input type="text" name="article_number" value="{{ product['article_number'] }}" required>
+              </label>
+              <label>
+                <span>{{ ui_settings.barcode_label }}</span>
+                <div class="field-action-row">
+                  <input type="text" id="edit-barcode-{{ product['id'] }}" name="barcode" value="{{ product['barcode'] }}">
+                  <button class="button secondary small" type="button" data-barcode-scan-mode="field" data-barcode-target="#edit-barcode-{{ product['id'] }}">Scan</button>
+                </div>
               </label>
               <label>
                 <span>{{ ui_settings.description_label }}</span>
@@ -202,6 +210,13 @@
           <input type="text" name="article_number" required>
         </label>
         <label>
+          <span>{{ ui_settings.barcode_label }}</span>
+          <div class="field-action-row">
+            <input type="text" id="create-barcode-input" name="barcode">
+            <button class="button secondary small" type="button" data-barcode-scan-mode="field" data-barcode-target="#create-barcode-input">Scan</button>
+          </div>
+        </label>
+        <label>
           <span>{{ ui_settings.description_label }}</span>
           <input type="text" name="description" required>
         </label>
@@ -294,5 +309,149 @@
       </form>
     </div>
   </section>
+
+  <section id="barcode-scanner-modal" class="modal-shell" aria-hidden="true">
+    <div class="modal-backdrop" data-modal-close></div>
+    <div class="modal-card modal-card-narrow">
+      <div class="toolbar modal-toolbar">
+        <div class="section-title no-space">
+          <h2>Barcode scannen</h2>
+        </div>
+        <button class="button secondary small" type="button" id="barcode-scanner-close" data-modal-close>Sluiten</button>
+      </div>
+      <div class="scanner-shell">
+        <div id="barcode-reader" class="scanner-video"></div>
+        <p id="barcode-scan-status" class="muted">Gebruik de camera of kies een foto van een barcode.</p>
+        <label class="full-width">
+          <span>Handmatig ingeven</span>
+          <div class="field-action-row">
+            <input type="text" id="manual-barcode-input" placeholder="Barcode plakken of typen">
+            <button class="button secondary small" type="button" id="manual-barcode-apply">Gebruik</button>
+          </div>
+        </label>
+      </div>
+    </div>
+  </section>
+
+  <script src="https://unpkg.com/html5-qrcode" defer></script>
+  <script>
+    (() => {
+      const scannerModal = document.getElementById("barcode-scanner-modal");
+      const readerId = "barcode-reader";
+      const status = document.getElementById("barcode-scan-status");
+      const manualInput = document.getElementById("manual-barcode-input");
+      const manualApplyButton = document.getElementById("manual-barcode-apply");
+      const closeButton = document.getElementById("barcode-scanner-close");
+      if (!scannerModal || !status || !manualInput || !manualApplyButton || !closeButton) return;
+
+      const setModalState = (isOpen) => {
+        scannerModal.classList.toggle("is-open", isOpen);
+        scannerModal.setAttribute("aria-hidden", isOpen ? "false" : "true");
+      };
+
+      let currentTarget = null;
+      let currentMode = "field";
+      let scanner = null;
+      let scannerStarting = false;
+
+      const stopScanner = () => {
+        if (scanner) {
+          scanner.clear().catch(() => {});
+          scanner = null;
+        }
+        scannerStarting = false;
+      };
+
+      const applyBarcode = (barcodeValue) => {
+        if (!currentTarget) return;
+        currentTarget.value = barcodeValue;
+        if (currentMode === "search") {
+          const searchForm = currentTarget.closest("form");
+          if (searchForm) searchForm.submit();
+        }
+      };
+
+      const startScanner = async () => {
+        if (scannerStarting || scanner) return;
+        if (typeof Html5QrcodeScanner === "undefined") {
+          status.textContent = "De scanner kon niet geladen worden. Controleer je internetverbinding en herlaad de pagina.";
+          return;
+        }
+        scannerStarting = true;
+        try {
+          scanner = new Html5QrcodeScanner(
+            readerId,
+            {
+              fps: 10,
+              qrbox: { width: 260, height: 140 },
+              rememberLastUsedCamera: true,
+              supportedScanTypes: [
+                Html5QrcodeScanType.SCAN_TYPE_CAMERA,
+                Html5QrcodeScanType.SCAN_TYPE_FILE
+              ],
+              formatsToSupport: [
+                Html5QrcodeSupportedFormats.EAN_13,
+                Html5QrcodeSupportedFormats.EAN_8,
+                Html5QrcodeSupportedFormats.CODE_128,
+                Html5QrcodeSupportedFormats.CODE_39,
+                Html5QrcodeSupportedFormats.UPC_A,
+                Html5QrcodeSupportedFormats.UPC_E
+              ]
+            },
+            false
+          );
+          scanner.render(
+            (decodedText) => {
+              applyBarcode(decodedText);
+              status.textContent = `Barcode gevonden: ${decodedText}`;
+              stopScanner();
+              setModalState(false);
+            },
+            () => {}
+          );
+          status.textContent = "Richt de camera op de barcode of kies een foto.";
+        } catch (_error) {
+          status.textContent = "De scanner kon niet gestart worden. Controleer cameratoegang of probeer handmatig.";
+          stopScanner();
+        } finally {
+          scannerStarting = false;
+        }
+      };
+
+      document.querySelectorAll("[data-barcode-scan-mode]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const selector = button.getAttribute("data-barcode-target");
+          currentTarget = selector ? document.querySelector(selector) : null;
+          currentMode = button.getAttribute("data-barcode-scan-mode") || "field";
+          manualInput.value = "";
+          status.textContent = "Gebruik de camera of kies een foto van een barcode.";
+          setModalState(true);
+          window.setTimeout(startScanner, 0);
+        });
+      });
+
+      manualApplyButton.addEventListener("click", () => {
+        const value = manualInput.value.trim();
+        if (!value) {
+          status.textContent = "Geef eerst een barcode in.";
+          return;
+        }
+        applyBarcode(value);
+        status.textContent = `Barcode ingevuld: ${value}`;
+        stopScanner();
+        setModalState(false);
+      });
+
+      closeButton.addEventListener("click", stopScanner);
+      scannerModal.querySelectorAll("[data-modal-close]").forEach((button) => {
+        button.addEventListener("click", stopScanner);
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && scannerModal.classList.contains("is-open")) {
+          stopScanner();
+        }
+      });
+    })();
+  </script>
 
 {% endblock %}
