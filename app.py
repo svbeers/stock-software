@@ -16,8 +16,8 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 
 BASE_DIR = Path(__file__).resolve().parent
-BACKUP_DIR = BASE_DIR / "backups"
 DATABASE_PATH = Path(os.environ.get("STOCK_MANAGER_DB", str(BASE_DIR / "stock_manager.db")))
+BACKUP_DIR = Path(os.environ.get("STOCK_MANAGER_BACKUP_DIR", str(DATABASE_PATH.parent / "backups")))
 ADMIN_USERNAME = os.environ.get("STOCK_MANAGER_ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.environ.get("STOCK_MANAGER_ADMIN_PASSWORD", "").strip()
 SECRET_KEY = os.environ.get("STOCK_MANAGER_SECRET_KEY", "dev")

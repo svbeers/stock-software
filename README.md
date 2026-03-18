@@ -24,6 +24,7 @@ Gebruik deze omgevingsvariabelen:
 - `STOCK_MANAGER_ADMIN_USERNAME`
 - `STOCK_MANAGER_ADMIN_PASSWORD`
 - `STOCK_MANAGER_DB`
+- `STOCK_MANAGER_BACKUP_DIR` (optioneel)
 - `STOCK_MANAGER_COOKIE_SECURE`
 
 Als `STOCK_MANAGER_ADMIN_PASSWORD` leeg is, draait de app zonder login.
@@ -34,7 +35,8 @@ Een voorbeeldbestand staat in `.env.example`.
 ## Back-ups
 
 - Back-ups maak je via de pagina `Instellingen`
-- Back-upbestanden worden opgeslagen in de map `backups`
+- Back-upbestanden worden standaard opgeslagen in een map `backups` naast de actieve database
+- Op Railway is dat normaal `/app/data/backups`
 
 ## Veilig testen
 
@@ -80,6 +82,8 @@ Zet daarna deze environment variable:
 - `STOCK_MANAGER_SECRET_KEY`
 - `STOCK_MANAGER_ADMIN_USERNAME`
 - `STOCK_MANAGER_ADMIN_PASSWORD`
+- `STOCK_MANAGER_DB=/app/data/stock_manager.db`
+- `STOCK_MANAGER_BACKUP_DIR=/app/data/backups` (optioneel, maar duidelijk)
 - `STOCK_MANAGER_COOKIE_SECURE=1`
 
 Gebruik voor `STOCK_MANAGER_SECRET_KEY` een lange willekeurige tekst.
